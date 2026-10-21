@@ -23,3 +23,47 @@ class RiskTheme(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class EnterpriseFunction(models.Model):
+    name = models.CharField(max_length=80, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class StrategicObjective(models.Model):
+    name = models.CharField(max_length=160, unique=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class ExternalStakeholder(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    accountable_party = models.CharField(max_length=255, blank=True)
+    influence_mechanism = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class RiskAppetite(models.Model):
+    name = models.CharField(max_length=20, unique=True)
+    tolerance_threshold = models.PositiveSmallIntegerField()
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["tolerance_threshold", "name"]
+
+    def __str__(self):
+        return f"{self.name} ({self.tolerance_threshold})"
