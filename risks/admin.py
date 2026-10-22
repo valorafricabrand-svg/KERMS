@@ -1,6 +1,13 @@
 from django.contrib import admin
 
-from .models import RiskCategory, RiskTheme
+from .models import (
+    EnterpriseFunction,
+    ExternalStakeholder,
+    RiskAppetite,
+    RiskCategory,
+    RiskTheme,
+    StrategicObjective,
+)
 
 
 @admin.register(RiskCategory)
@@ -16,3 +23,39 @@ class RiskThemeAdmin(admin.ModelAdmin):
     list_display = ("name",)
     search_fields = ("name",)
     ordering = ("name",)
+
+
+@admin.register(EnterpriseFunction)
+class EnterpriseFunctionAdmin(admin.ModelAdmin):
+    list_display = ("name",)
+    search_fields = ("name",)
+    ordering = ("name",)
+
+
+@admin.register(StrategicObjective)
+class StrategicObjectiveAdmin(admin.ModelAdmin):
+    list_display = ("name",)
+    search_fields = ("name",)
+    ordering = ("name",)
+
+
+@admin.register(ExternalStakeholder)
+class ExternalStakeholderAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "accountable_party",
+        "influence_mechanism",
+    )
+    search_fields = (
+        "name",
+        "accountable_party",
+        "influence_mechanism",
+    )
+    ordering = ("name",)
+
+
+@admin.register(RiskAppetite)
+class RiskAppetiteAdmin(admin.ModelAdmin):
+    list_display = ("name", "tolerance_threshold")
+    search_fields = ("name", "description")
+    ordering = ("tolerance_threshold", "name")
