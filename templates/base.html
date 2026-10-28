@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>{% block title %}Risk Intelligence{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <button class="mobile-menu" type="button" aria-label="Open navigation">☰</button>
+  <aside class="sidebar" id="primary-navigation">
+    <a class="brand" href="/"><span class="brand-mark">CGS</span><span><strong>CGS Risk</strong><small>Enterprise intelligence</small></span></a>
+    <nav aria-label="Primary navigation">
+      <a href="/" class="{% if request.path == '/' %}active{% endif %}"><span class="nav-icon">▦</span><span>Overview</span></a>
+      <a href="/risks/" class="{% if '/risks/' in request.path %}active{% endif %}"><span class="nav-icon">◫</span><span>Risk register</span></a>
+      <a href="/assets/" class="{% if '/assets/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Assets & dependencies</span></a>
+      <a href="/scenarios/" class="{% if '/scenarios/' in request.path %}active{% endif %}"><span class="nav-icon">⟳</span><span>Scenarios & stress tests</span></a>
+      <a href="/assurance/" class="{% if '/assurance/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Controls & assurance</span></a>
+      <a href="/incidents/" class="{% if '/incidents/' in request.path %}active{% endif %}"><span class="nav-icon">!</span><span>Incidents & losses</span></a>
+      <a href="/governance/" class="{% if '/governance/' in request.path %}active{% endif %}"><span class="nav-icon">§</span><span>Governance & compliance</span></a>
+      <a href="/intelligence/" class="{% if '/intelligence/' in request.path %}active{% endif %}"><span class="nav-icon">⌁</span><span>Risk intelligence</span></a>
+      <a href="/reports/" class="{% if '/reports/' in request.path %}active{% endif %}"><span class="nav-icon">▤</span><span>Reporting</span></a>
+      <a href="/integrations/" class="{% if '/integrations/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Integrations & API</span></a>
+      <a href="/admin/"><span class="nav-icon">⚙</span><span>Administration</span></a>
+    </nav>
+    <a href="/risks/new/" class="sidebar-action">+ Register new risk</a>
+    <div class="user-panel"><span class="avatar">{{ request.user.username|first|upper }}</span><div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><span>{{ request.user.email }}</span></div><a href="/admin/logout/?next=/" title="Sign out">↪</a></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div><span class="eyebrow">Enterprise risk</span><h1>{% block heading %}{% endblock %}</h1></div><div class="topbar-tools"><form action="/search/" method="get" class="global-search"><span>⌕</span><input name="q" placeholder="Search risks, assets, locations…" aria-label="Search the platform"><kbd>Ctrl K</kbd></form>{% block actions %}{% endblock %}</div></header>
+    {% block content %}{% endblock %}
+  </main>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

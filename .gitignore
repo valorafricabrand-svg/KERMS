@@ -1,0 +1,49 @@
+# Python temporary files
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Django temporary and local files
+*.log
+db.sqlite3
+db.sqlite3-journal
+staticfiles/
+media/
+
+# Passwords, secret keys and local settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Confidential source data and generated outputs
+data/
+uploads/
+exports/
+backups/
+reports/generated/
+*.xlsx
+*.xls
+*.csv
+*.docx
+*.pdf
+*.zip
+
+# VS Code, other editors and Windows
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Front-end dependencies, if introduced later
+node_modules/

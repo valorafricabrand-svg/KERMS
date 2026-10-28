@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Controls & Assurance{% endblock %}
+{% block heading %}Controls & assurance{% endblock %}
+{% block actions %}<button class="button" type="button" onclick="document.querySelector('.assurance-builder').scrollIntoView({behavior:'smooth'})">+ Create assurance record</button>{% endblock %}
+{% block content %}
+<form class="org-filter" method="get"><label>Organization<select name="organization" onchange="this.form.submit()">{% for org in organizations %}<option value="{{ org.pk }}" {% if org == organization %}selected{% endif %}>{{ org.name }}</option>{% endfor %}</select></label></form>
+<div class="metrics">
+  <article><span>Controls</span><strong>{{ control_count }}</strong><small>Registered risk controls</small></article>
+  <article><span>Effective controls</span><strong>{{ effective_controls }}</strong><small>Currently marked effective</small></article>
+  <article><span>Assurance tests</span><strong>{{ test_count }}</strong><small>Completed and scheduled records</small></article>
+  <article class="danger"><span>Effective tests</span><strong>{{ effective_tests }}</strong><small>Independent result of effective</small></article>
+</div>
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><div><span class="eyebrow">Control library</span><h2>Risk controls</h2></div></div>
+    {% if controls %}<div class="table-wrap"><table><thead><tr><th>Control</th><th>Risk</th><th>Owner</th><th>Status</th><th>Review</th></tr></thead><tbody>{% for control in controls %}<tr><td><strong>{{ control.name }}</strong></td><td>{{ control.risk.reference }}</td><td>{{ control.owner.get_full_name|default:control.owner.username|default:"Unassigned" }}</td><td>{% if control.effective %}<span class="badge low">Effective</span>{% else %}<span class="badge high">Needs review</span>{% endif %}</td><td>{{ control.review_date|date:"d M Y"|default:"Not set" }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state"><div class="empty-icon">✓</div><h2>No controls recorded</h2><p>Add a control and link it to a risk.</p></div>{% endif %}
+  </section>
+  <section class="card">
+    <div class="card-head"><div><span class="eyebrow">Independent validation</span><h2>Assurance tests</h2></div></div>
+    <form method="get" class="filters"><input type="hidden" name="organization" value="{{ organization.pk }}"><select name="result" aria-label="Filter test result" onchange="this.form.submit()"><option value="">All results</option>{% for value,label in results %}<option value="{{ value }}" {% if request.GET.result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></form>
+    {% if tests %}<div class="table-wrap"><table><thead><tr><th>Test</th><th>Control / risk</th><th>Result</th><th>Tested</th></tr></thead><tbody>{% for test in tests %}<tr><td><strong>{{ test.name }}</strong><small>{{ test.notes|truncatechars:50 }}</small></td><td>{{ test.control.name|default:test.risk.reference|default:"Organization-wide" }}</td><td><span class="badge {% if test.result == 'effective' %}low{% elif test.result == 'ineffective' %}critical{% elif test.result == 'partially_effective' %}high{% else %}medium{% endif %}">{{ test.get_result_display }}</span></td><td>{{ test.tested_at|date:"d M Y"|default:"Not scheduled" }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state compact"><p>No assurance tests match this view.</p></div>{% endif %}
+  </section>
+</div>
+<section class="card assurance-builder"><div class="card-head"><div><span class="eyebrow">Add records</span><h2>Create a control or assurance test</h2></div></div>
+<div class="assurance-builder-grid">
+  <form method="post" class="form-card compact-builder">{% csrf_token %}<input type="hidden" name="action" value="create_control"><h3>New control</h3><div>{{ control_form.risk.label_tag }}{{ control_form.risk }}{{ control_form.risk.errors }}</div><div>{{ control_form.name.label_tag }}{{ control_form.name }}{{ control_form.name.errors }}</div><div>{{ control_form.description.label_tag }}{{ control_form.description }}</div><div class="form-grid"><div>{{ control_form.owner.label_tag }}{{ control_form.owner }}</div><div>{{ control_form.review_date.label_tag }}{{ control_form.review_date }}</div></div><label>{{ control_form.effective }} Currently effective</label><button class="button" type="submit">Save control</button></form>
+  <form method="post" class="form-card compact-builder">{% csrf_token %}<input type="hidden" name="action" value="create_test"><h3>New assurance test</h3><div>{{ test_form.risk.label_tag }}{{ test_form.risk }}</div><div>{{ test_form.control.label_tag }}{{ test_form.control }}</div><div>{{ test_form.name.label_tag }}{{ test_form.name }}</div><div class="form-grid"><div>{{ test_form.result.label_tag }}{{ test_form.result }}</div><div>{{ test_form.tested_at.label_tag }}{{ test_form.tested_at }}</div></div><div>{{ test_form.tested_by.label_tag }}{{ test_form.tested_by }}</div><div>{{ test_form.notes.label_tag }}{{ test_form.notes }}</div><button class="button" type="submit">Save test</button></form>
+</div></section>
+{% endblock %}

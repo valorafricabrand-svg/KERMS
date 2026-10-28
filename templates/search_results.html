@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Search results{% endblock %}
+{% block heading %}Search{% endblock %}
+{% block content %}
+<div class="card search-page">
+  <form method="get" action="/search/" class="search-page-form">
+    <label for="global-search-input">Search the platform</label>
+    <div><input id="global-search-input" name="q" value="{{ query }}" placeholder="Risk, asset, supplier, location or alert" autofocus><button class="button" type="submit">Search</button></div>
+  </form>
+  {% if query %}<p class="search-summary">Results for <strong>“{{ query }}”</strong></p>{% endif %}
+
+  {% if risks %}<section><h2>Risks</h2><div class="table-wrap"><table><thead><tr><th>Reference</th><th>Risk</th><th>Status</th></tr></thead><tbody>{% for risk in risks %}<tr><td>{{ risk.reference }}</td><td><a href="/risks/{{ risk.pk }}/">{{ risk.title }}</a></td><td><span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span></td></tr>{% endfor %}</tbody></table></div></section>{% endif %}
+  {% if assets %}<section><h2>Assets</h2><ul class="search-list">{% for asset in assets %}<li><strong>{{ asset.name }}</strong><span>{{ asset.asset_type }}</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if suppliers %}<section><h2>Suppliers</h2><ul class="search-list">{% for supplier in suppliers %}<li><strong>{{ supplier.name }}</strong><span>{{ supplier.country }}</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if locations %}<section><h2>Locations</h2><ul class="search-list">{% for location in locations %}<li><strong>{{ location.name }}</strong><span>{{ location.country }}</span></li>{% endfor %}</ul></section>{% endif %}
+  {% if alerts %}<section><h2>Risk intelligence</h2><ul class="search-list">{% for alert in alerts %}<li><strong>{{ alert.title }}</strong><span>{{ alert.severity }} · {{ alert.country|default:"Global" }}</span></li>{% endfor %}</ul></section>{% endif %}
+
+  {% if query and not risks and not assets and not suppliers and not locations and not alerts %}
+  <div class="empty-state"><div class="empty-icon">⌕</div><h2>No results found</h2><p>Try a shorter name, a country, a risk reference, or an asset type.</p></div>
+  {% endif %}
+</div>
+{% endblock %}

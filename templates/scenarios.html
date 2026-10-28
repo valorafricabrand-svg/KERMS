@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Scenarios & Stress Testing{% endblock %}
+{% block heading %}Scenarios & stress testing{% endblock %}
+{% block actions %}<button class="button" type="button" onclick="document.querySelector('.scenario-builder').scrollIntoView({behavior:'smooth'})">+ New scenario</button>{% endblock %}
+{% block content %}
+<form class="org-filter" method="get"><label>Organization<select name="organization" onchange="this.form.submit()">{% for org in organizations %}<option value="{{ org.pk }}" {% if org == organization %}selected{% endif %}>{{ org.name }}</option>{% endfor %}</select></label></form>
+<div class="metrics">
+  <article><span>Scenarios</span><strong>{{ scenarios.count }}</strong><small>Across the organization</small></article>
+  <article><span>Assessed</span><strong>{{ selected.impacts.count|default:0 }}</strong><small>Calculated impact records</small></article>
+  <article class="danger"><span>Gross exposure</span><strong>{% if selected %}{{ selected.expected_exposure }}{% else %}0{% endif %}</strong><small>Scenario value</small></article>
+  <article><span>Status</span><strong class="metric-text">{% if selected %}{{ selected.get_status_display }}{% else %}Draft{% endif %}</strong><small>{% if selected.assessed_at %}Assessed {{ selected.assessed_at|date:"d M Y" }}{% else %}Ready for assessment{% endif %}</small></article>
+</div>
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><div><span class="eyebrow">Scenario library</span><h2>Stress tests</h2></div></div>
+    {% if scenarios %}<div class="scenario-list">{% for scenario in scenarios %}<a href="/scenarios/?organization={{ organization.pk }}&scenario={{ scenario.pk }}" class="scenario-row {% if scenario == selected %}selected{% endif %}"><div><strong>{{ scenario.name }}</strong><span>{{ scenario.get_scenario_type_display }} · Severity {{ scenario.severity }}/5</span></div><span class="badge {{ scenario.status }}">{{ scenario.get_status_display }}</span></a>{% endfor %}</div>{% else %}<div class="empty-state"><div class="empty-icon">⟳</div><h2>No scenarios yet</h2><p>Create a stress test to model exposure and cascading dependencies.</p></div>{% endif %}
+  </section>
+  <section class="card">
+    <div class="card-head"><div><span class="eyebrow">Selected scenario</span><h2>{% if selected %}{{ selected.name }}{% else %}Create a scenario{% endif %}</h2></div>{% if selected %}<span class="badge {{ selected.status }}">{{ selected.get_status_display }}</span>{% endif %}</div>
+    {% if selected %}
+      <p>{{ selected.description }}</p>
+      <dl class="facts"><dt>Type</dt><dd>{{ selected.get_scenario_type_display }}</dd><dt>Severity</dt><dd>{{ selected.severity }} / 5</dd><dt>Assumptions</dt><dd>{{ selected.assumptions|default:"No assumptions recorded" }}</dd><dt>Approved by</dt><dd>{% if selected.approved_by %}{% if selected.approved_by.get_full_name %}{{ selected.approved_by.get_full_name }}{% else %}{{ selected.approved_by.username }}{% endif %}{% else %}Pending approval{% endif %}</dd></dl>
+      <div class="scenario-coverage"><span><strong>{{ selected.risks.count }}</strong> risks</span><span><strong>{{ selected.assets.count }}</strong> assets</span><span><strong>{{ selected.suppliers.count }}</strong> suppliers</span><span><strong>{{ selected.locations.count }}</strong> locations</span></div>
+      <form method="post" class="scenario-actions">{% csrf_token %}<input type="hidden" name="scenario" value="{{ selected.pk }}"><button name="action" value="run" class="button" type="submit">Run assessment</button>{% if selected.status != "approved" %}<button name="action" value="approve" class="button secondary" type="submit">Approve scenario</button>{% endif %}</form>
+      {% if selected.impacts.exists %}<h3 class="impact-title">Calculated impacts</h3><div class="table-wrap"><table><thead><tr><th>Level</th><th>Affected item</th><th>Type</th><th>Exposure</th></tr></thead><tbody>{% for impact in selected.impacts.all %}<tr><td>{% if impact.cascade_level == 0 %}Direct{% else %}Cascade 1{% endif %}</td><td>{{ impact.risk|default:impact.asset|default:impact.supplier }}</td><td>{% if impact.risk %}Risk{% elif impact.asset %}Asset{% else %}Supplier{% endif %}</td><td>{{ impact.exposure }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state compact"><p>Run the assessment to calculate direct and dependency impacts.</p></div>{% endif %}
+    {% else %}<div class="empty-state compact"><p>Create the first scenario using the form below.</p></div>{% endif %}
+  </section>
+</div>
+<section class="card scenario-builder"><div class="card-head"><div><span class="eyebrow">Build a stress test</span><h2>Scenario assumptions</h2></div></div><form method="post" class="form-card scenario-form">{% csrf_token %}<input type="hidden" name="action" value="create"><div class="form-grid"><div><label for="id_name">Scenario name</label>{{ form.name }}</div><div><label for="id_scenario_type">Scenario type</label>{{ form.scenario_type }}</div><div><label for="id_severity">Severity (1–5)</label>{{ form.severity }}</div><div><label for="id_expected_exposure">Gross expected exposure</label>{{ form.expected_exposure }}</div></div><label for="id_description">Description</label>{{ form.description }}<label for="id_assumptions">Key assumptions</label>{{ form.assumptions }}<div class="form-grid"><div><label>Related risks</label>{{ form.risks }}</div><div><label>Related assets</label>{{ form.assets }}</div><div><label>Related suppliers</label>{{ form.suppliers }}</div><div><label>Related locations</label>{{ form.locations }}</div><div><label>Related portfolios</label>{{ form.portfolios }}</div></div><div class="form-actions"><button class="button" type="submit">Create scenario</button></div></form></section>
+{% endblock %}

@@ -1,0 +1,23 @@
+{% extends "base.html" %}{% block heading %}Executive overview{% endblock %}{% block actions %}<a class="button" href="/risks/new/">+ Register risk</a>{% endblock %}
+{% block content %}
+<form class="org-filter" method="get"><label>Organization<select name="organization" onchange="this.form.submit()">{% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label></form>
+<section class="metrics">
+  <article><span>Total open risks</span><strong>{{ risk_count }}</strong><small>In the enterprise register</small></article>
+  <article class="danger"><span>Critical residual risks</span><strong>{{ critical_count }}</strong><small>Require immediate attention</small></article>
+  <article><span>Active treatments</span><strong>{{ open_treatments }}</strong><small>Actions not yet complete</small></article>
+  <article><span>Locations monitored</span><strong>{{ map_risks|length }}</strong><small>Geographic exposure points</small></article>
+</section>
+<section class="grid-2">
+  <article class="card"><div class="card-head"><div><span class="eyebrow">Residual exposure</span><h2>Risk profile</h2></div></div><div class="risk-bars">
+    {% for name,count in rating_counts.items %}<div class="risk-row"><span>{{ name }}</span><div><i style="width:{% widthratio count risk_count 100 %}%"></i></div><b>{{ count }}</b></div>{% endfor %}
+  </div></article>
+  <article class="card"><div class="card-head"><div><span class="eyebrow">Geographic intelligence</span><h2>Exposure map</h2></div></div><div id="risk-map"></div></article>
+</section>
+<section class="card"><div class="card-head"><div><span class="eyebrow">Priority watchlist</span><h2>Highest residual risks</h2></div><a href="/risks/">View register →</a></div>
+<div class="table-wrap"><table><thead><tr><th>Reference</th><th>Risk</th><th>Type</th><th>Location</th><th>Residual score</th><th>Rating</th><th>Status</th></tr></thead><tbody>{% for risk in risks %}<tr><td>{{ risk.reference }}</td><td><a href="/risks/{{ risk.pk }}/">{{ risk.title }}</a></td><td>{{ risk.get_risk_type_display }}</td><td>{{ risk.location|default:"—" }}</td><td>{{ risk.residual_score }}</td><td><span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span></td><td>{{ risk.get_status_display }}</td></tr>{% empty %}<tr><td colspan="7">No risks registered yet.</td></tr>{% endfor %}</tbody></table></div></section>
+<script>
+const riskMap = L.map('risk-map').setView([0, 20], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(riskMap);
+{% for risk in map_risks %}{% if risk.location.latitude and risk.location.longitude %}L.marker([{{ risk.location.latitude }},{{ risk.location.longitude }}]).addTo(riskMap).bindPopup('<strong>{{ risk.reference }}</strong><br>{{ risk.title|escapejs }}<br>{{ risk.rating }} residual risk');{% endif %}{% endfor %}
+</script>
+{% endblock %}
