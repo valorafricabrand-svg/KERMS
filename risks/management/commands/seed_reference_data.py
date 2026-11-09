@@ -51,7 +51,7 @@ THEMES = [
 
 
 class Command(BaseCommand):
-    help = "Load the official CGS risk categories and themes."
+    help = "Load baseline risk categories and themes for business assessments."
 
     def handle(self, *args, **options):
         for position, (code, name) in enumerate(CATEGORIES, start=1):

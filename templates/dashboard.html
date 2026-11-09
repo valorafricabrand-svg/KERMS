@@ -1,23 +1,263 @@
-{% extends "base.html" %}{% block heading %}Executive overview{% endblock %}{% block actions %}<a class="button" href="/risks/new/">+ Register risk</a>{% endblock %}
+{% extends "base.html" %}
+{% block title %}Business health | Kenya Enterprise Risk Management{% endblock %}
+{% block heading %}Business health{% endblock %}
+{% block actions %}
+<a class="button secondary" href="/incidents/">Report an issue</a>
+<a class="button" href="/risks/new/">+ Add a risk</a>
+{% endblock %}
 {% block content %}
-<form class="org-filter" method="get"><label>Organization<select name="organization" onchange="this.form.submit()">{% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}</select></label></form>
-<section class="metrics">
-  <article><span>Total open risks</span><strong>{{ risk_count }}</strong><small>In the enterprise register</small></article>
-  <article class="danger"><span>Critical residual risks</span><strong>{{ critical_count }}</strong><small>Require immediate attention</small></article>
-  <article><span>Active treatments</span><strong>{{ open_treatments }}</strong><small>Actions not yet complete</small></article>
-  <article><span>Locations monitored</span><strong>{{ map_risks|length }}</strong><small>Geographic exposure points</small></article>
-</section>
-<section class="grid-2">
-  <article class="card"><div class="card-head"><div><span class="eyebrow">Residual exposure</span><h2>Risk profile</h2></div></div><div class="risk-bars">
-    {% for name,count in rating_counts.items %}<div class="risk-row"><span>{{ name }}</span><div><i style="width:{% widthratio count risk_count 100 %}%"></i></div><b>{{ count }}</b></div>{% endfor %}
-  </div></article>
-  <article class="card"><div class="card-head"><div><span class="eyebrow">Geographic intelligence</span><h2>Exposure map</h2></div></div><div id="risk-map"></div></article>
-</section>
-<section class="card"><div class="card-head"><div><span class="eyebrow">Priority watchlist</span><h2>Highest residual risks</h2></div><a href="/risks/">View register →</a></div>
-<div class="table-wrap"><table><thead><tr><th>Reference</th><th>Risk</th><th>Type</th><th>Location</th><th>Residual score</th><th>Rating</th><th>Status</th></tr></thead><tbody>{% for risk in risks %}<tr><td>{{ risk.reference }}</td><td><a href="/risks/{{ risk.pk }}/">{{ risk.title }}</a></td><td>{{ risk.get_risk_type_display }}</td><td>{{ risk.location|default:"—" }}</td><td>{{ risk.residual_score }}</td><td><span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span></td><td>{{ risk.get_status_display }}</td></tr>{% empty %}<tr><td colspan="7">No risks registered yet.</td></tr>{% endfor %}</tbody></table></div></section>
-<script>
-const riskMap = L.map('risk-map').setView([0, 20], 2);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap'}).addTo(riskMap);
-{% for risk in map_risks %}{% if risk.location.latitude and risk.location.longitude %}L.marker([{{ risk.location.latitude }},{{ risk.location.longitude }}]).addTo(riskMap).bindPopup('<strong>{{ risk.reference }}</strong><br>{{ risk.title|escapejs }}<br>{{ risk.rating }} residual risk');{% endif %}{% endfor %}
-</script>
+<div class="owner-dashboard">
+  {% if organization %}
+  <div class="owner-welcome">
+    <div>
+      <p class="owner-kicker">Your daily check-in</p>
+      <h2>{{ organization.name }}</h2>
+      <p>A quick look at what could interrupt business and what needs your attention.</p>
+      <a class="owner-profile-link" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Business profile {{ business_profile_completion }}% complete{% else %}Add your business profile{% endif %} <span aria-hidden="true">→</span></a>
+    </div>
+    <form class="owner-org-filter" method="get">
+      <label for="dashboard-organization">Business</label>
+      <select id="dashboard-organization" name="organization" onchange="this.form.submit()">
+        {% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+
+  <section class="owner-metrics" aria-label="Business health summary">
+    <a class="owner-metric" href="/risks/">
+      <span class="owner-metric-icon blue" aria-hidden="true">◎</span>
+      <span class="owner-metric-label">Risks to keep an eye on</span>
+      <strong>{{ open_risk_count }}</strong>
+      <small>{{ priority_risk_count }} high priority</small>
+    </a>
+    <a class="owner-metric {% if overdue_action_count %}needs-action{% endif %}" href="/risks/">
+      <span class="owner-metric-icon amber" aria-hidden="true">◷</span>
+      <span class="owner-metric-label">Actions due</span>
+      <strong>{{ total_actions_due }}</strong>
+      <small>{% if overdue_action_count %}{{ overdue_action_count }} overdue{% else %}Nothing overdue{% endif %}{% if due_today_action_count %} · {{ due_today_action_count }} due today{% endif %}</small>
+    </a>
+    <a class="owner-metric {% if new_bot_alert_count %}needs-attention{% endif %}" href="/risk-bot/">
+      <span class="owner-metric-icon red" aria-hidden="true">!</span>
+      <span class="owner-metric-label">New payment alerts</span>
+      <strong>{{ new_bot_alert_count }}</strong>
+      <small>{% if new_bot_alert_count %}Review flagged activity{% else %}No new alerts{% endif %}</small>
+    </a>
+    <a class="owner-metric" href="/incidents/">
+      <span class="owner-metric-icon green" aria-hidden="true">↗</span>
+      <span class="owner-metric-label">Issues being handled</span>
+      <strong>{{ open_incident_count }}</strong>
+      <small>Reported business incidents</small>
+    </a>
+  </section>
+
+  <section class="owner-profile-overview" aria-label="Business profile summary">
+    <article class="card owner-profile-card">
+      <div class="card-head">
+        <div><span class="eyebrow">Business snapshot</span><h2>Know your business</h2></div>
+        <a href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Edit profile →{% else %}Build profile →{% endif %}</a>
+      </div>
+      {% if business_profile %}
+      <dl class="owner-profile-facts">
+        <div><dt>Sector</dt><dd>{% if business_profile.sector == "other" %}{{ business_profile.other_sector|default:business_profile.get_sector_display }}{% elif business_profile.sector %}{{ business_profile.get_sector_display }}{% else %}Not added{% endif %}</dd></div>
+        <div><dt>County</dt><dd>{{ business_profile.county|default:"Not added" }}</dd></div>
+        <div><dt>Business type</dt><dd>{{ business_profile.get_legal_structure_display|default:"Not added" }}</dd></div>
+        <div><dt>Team size</dt><dd>{{ business_profile.get_staff_band_display|default:"Not added" }}</dd></div>
+        <div><dt>Trading since</dt><dd>{{ business_profile.year_started|default:"Not added" }}</dd></div>
+        <div><dt>Customers</dt><dd>{{ business_profile.get_operating_model_display|default:"Not added" }}</dd></div>
+        <div><dt>Largest customer</dt><dd>{{ business_profile.get_customer_concentration_display|default:"Not added" }}</dd></div>
+        <div><dt>Key suppliers</dt><dd>{{ business_profile.get_supplier_reliance_display|default:"Not added" }}</dd></div>
+        {% if business_profile.annual_turnover_band %}<div><dt>Turnover range</dt><dd>{{ business_profile.get_annual_turnover_band_display }}</dd></div>{% endif %}
+      </dl>
+      <div class="owner-profile-tags">
+        <div><span>Sales channels</span>{% if profile_sales_channels %}<div class="owner-tag-list">{% for channel in profile_sales_channels %}<span>{{ channel }}</span>{% endfor %}</div>{% else %}<small>Not added</small>{% endif %}</div>
+        <div><span>Payment methods</span>{% if profile_payment_methods %}<div class="owner-tag-list">{% for method in profile_payment_methods %}<span>{{ method }}</span>{% endfor %}</div>{% else %}<small>Not added</small>{% endif %}</div>
+      </div>
+      {% if business_profile.top_concerns %}
+      <div class="owner-profile-concern"><span>Your main concern</span><p>{{ business_profile.top_concerns|truncatechars:180 }}</p></div>
+      {% endif %}
+      {% else %}
+      <div class="owner-empty owner-profile-empty">
+        <span class="owner-empty-icon" aria-hidden="true">＋</span>
+        <div><strong>Add a few details about your business</strong><p>We’ll use them to make this workspace easier to understand and tailor future guidance.</p></div>
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="card owner-profile-card owner-preparedness-card">
+      <div class="card-head">
+        <div><span class="eyebrow">Your check-in</span><h2>Business preparedness</h2></div>
+        <a href="/business-profile/?organization={{ organization.pk }}">Review answers →</a>
+      </div>
+      {% if business_profile %}
+      <ul class="owner-preparedness-list">
+        {% for item in profile_preparedness %}
+        <li>
+          <span class="owner-preparedness-mark {{ item.status_class }}" aria-hidden="true"></span>
+          <span>{{ item.label }}</span>
+          <strong class="{{ item.status_class }}">{{ item.status_label }}</strong>
+        </li>
+        {% endfor %}
+      </ul>
+      <p class="owner-profile-footnote">These are your responses for discussion—not an automated risk score or professional assessment.</p>
+      {% else %}
+      <div class="owner-empty owner-profile-empty">
+        <span class="owner-empty-icon" aria-hidden="true">✓</span>
+        <div><strong>Your check-in will appear here</strong><p>Answer a few optional questions to record what is already in place and where you may want help.</p></div>
+      </div>
+      {% endif %}
+    </article>
+  </section>
+
+  {% if setup_needed %}
+  <section class="owner-setup" aria-labelledby="setup-title">
+    <div class="owner-setup-icon" aria-hidden="true">✦</div>
+    <div class="owner-setup-copy">
+      <span class="eyebrow">A helpful first step</span>
+      <h2 id="setup-title">Make this dashboard yours</h2>
+      <p>Start with the risks that matter to your business. Add payment monitoring when you are ready; the dashboard will update as your real activity comes in.</p>
+      <div class="owner-setup-links">
+        {% if not business_profile or business_profile_completion < 100 %}<a class="button" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Continue business profile{% else %}Set up business profile{% endif %}</a>{% endif %}
+        {% if not open_risk_count %}<a class="button" href="/risks/new/">Add your first risk</a>{% else %}<a class="button secondary" href="/risks/">Review your risk list</a>{% endif %}
+        {% if not policy %}<a class="owner-text-link" href="/admin/risks/riskbotpolicy/">Set up payment alerts →</a>{% else %}<a class="owner-text-link" href="/risk-bot/">View payment monitoring →</a>{% endif %}
+        <a class="owner-text-link" href="/integrations/">Connect a business tool →</a>
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <div class="owner-section-heading">
+    <div><span class="eyebrow">Your next steps</span><h2>What needs attention</h2></div>
+    <span class="owner-updated">Based on the latest information in your workspace</span>
+  </div>
+
+  <section class="owner-attention-grid">
+    <article class="card owner-list-card">
+      <div class="card-head">
+        <div><span class="eyebrow">Review first</span><h2>Payment alerts</h2></div>
+        <a href="/risk-bot/">See all →</a>
+      </div>
+      {% if new_bot_alerts %}
+      <ul class="owner-list">
+        {% for alert in new_bot_alerts %}
+        <li>
+          <span class="owner-list-icon alert" aria-hidden="true">!</span>
+          <div class="owner-list-copy">
+            <strong>{{ alert.message }}</strong>
+            <small>{{ alert.created_at|date:"j M, H:i" }}{% if alert.transaction %} · Receipt {{ alert.transaction.receipt_number }}{% endif %}</small>
+          </div>
+          <span class="badge {{ alert.severity }}">{{ alert.get_severity_display }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="owner-empty">
+        <span class="owner-empty-icon" aria-hidden="true">✓</span>
+        <div><strong>You’re all caught up</strong><p>No new payment alerts{% if not policy %}. Set up monitoring to flag unusual activity{% endif %}.</p></div>
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="card owner-list-card">
+      <div class="card-head">
+        <div><span class="eyebrow">Do not miss</span><h2>Overdue actions</h2></div>
+        <a href="/risks/">View risk actions →</a>
+      </div>
+      {% if overdue_actions %}
+      <ul class="owner-list">
+        {% for action in overdue_actions %}
+        <li>
+          <span class="owner-list-icon overdue" aria-hidden="true">◷</span>
+          <div class="owner-list-copy">
+            <strong>{{ action.action }}</strong>
+            <small>{{ action.risk.reference }} · Due {{ action.due_date|date:"j M Y" }}{% if action.owner %} · {{ action.owner.get_full_name|default:action.owner.username }}{% endif %}</small>
+          </div>
+          <a class="owner-row-link" href="/risks/{{ action.risk.pk }}/" aria-label="Open risk {{ action.risk.reference }}">→</a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="owner-empty">
+        <span class="owner-empty-icon" aria-hidden="true">✓</span>
+        <div><strong>No overdue actions</strong><p>{% if due_today_action_count %}You have {{ due_today_action_count }} action(s) due today.{% else %}Your action list is up to date.{% endif %}</p></div>
+      </div>
+      {% endif %}
+    </article>
+  </section>
+
+  <section class="owner-lower-grid">
+    <article class="card owner-list-card">
+      <div class="card-head">
+        <div><span class="eyebrow">Your watchlist</span><h2>Risks to keep in view</h2></div>
+        <a href="/risks/">Open risk list →</a>
+      </div>
+      {% if priority_risks %}
+      <ul class="owner-list owner-risk-list">
+        {% for risk in priority_risks %}
+        <li>
+          <span class="owner-priority-dot {{ risk.rating|lower }}" aria-hidden="true"></span>
+          <div class="owner-list-copy">
+            <a href="/risks/{{ risk.pk }}/"><strong>{{ risk.title }}</strong></a>
+            <small>{{ risk.get_risk_type_display }} · {{ risk.reference }}</small>
+          </div>
+          <span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="owner-empty">
+        <span class="owner-empty-icon" aria-hidden="true">＋</span>
+        <div><strong>No high-priority risks right now</strong><p>{% if open_risk_count %}Keep reviewing your risk list as your business changes.{% else %}Add a risk that could affect your customers, money, people, or ability to operate.{% endif %}</p></div>
+      </div>
+      {% endif %}
+    </article>
+
+    <article class="card owner-list-card">
+      <div class="card-head">
+        <div><span class="eyebrow">At a glance</span><h2>Your risk mix</h2></div>
+        <a href="/risks/">Learn more →</a>
+      </div>
+      <p class="owner-helper">A simple summary of how serious your current risks may be.</p>
+      <div class="owner-risk-profile">
+        {% for item in risk_profile %}
+        <div class="owner-risk-row">
+          <span class="owner-priority-dot {{ item.name|lower }}" aria-hidden="true"></span>
+          <span class="owner-risk-name">{{ item.name }}</span>
+          <div class="owner-risk-track" role="img" aria-label="{{ item.count }} {{ item.name|lower }} risks">
+            <span class="{{ item.name|lower }}" style="width:{{ item.percentage }}%"></span>
+          </div>
+          <strong>{{ item.count }}</strong>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="owner-guide-note"><strong>Not sure where to start?</strong><span>Open a risk to see why it matters and what action could reduce it.</span></div>
+    </article>
+  </section>
+
+  {% if open_incidents %}
+  <section class="card owner-list-card owner-incidents">
+    <div class="card-head">
+      <div><span class="eyebrow">Recently reported</span><h2>Business issues being handled</h2></div>
+      <a href="/incidents/">View all issues →</a>
+    </div>
+    <ul class="owner-list">
+      {% for incident in open_incidents %}
+      <li>
+        <span class="owner-list-icon incident" aria-hidden="true">↗</span>
+        <div class="owner-list-copy">
+          <strong>{{ incident.title }}</strong>
+          <small>{{ incident.get_category_display }} · {{ incident.get_status_display }} · {{ incident.occurred_at|date:"j M Y" }}</small>
+        </div>
+        <a class="owner-row-link" href="/incidents/">View →</a>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+  {% else %}
+  <section class="card owner-no-business">
+    <h2>No business workspace yet</h2>
+    <p>Ask an administrator to connect your account to a business workspace to see its risks and actions.</p>
+  </section>
+  {% endif %}
+</div>
 {% endblock %}

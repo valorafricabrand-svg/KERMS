@@ -1,11 +1,15 @@
 import hashlib
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from .models import (
     ApiCredential,
+    BusinessProfile,
+    LossIncident,
     ManagementTransition,
     ManagementTransitionRiskReview,
     Organization,
@@ -15,6 +19,7 @@ from .models import (
     RiskBotPolicy,
     RiskBotTransaction,
     RiskAssessment,
+    RiskTreatment,
     StressScenario,
 )
 
@@ -47,11 +52,254 @@ class RiskPlatformTests(TestCase):
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(response.status_code, 302)
 
+    def test_business_profile_requires_login(self):
+        response = self.client.get(reverse("business_profile"))
+        self.assertEqual(response.status_code, 302)
+
+    def test_business_profile_is_a_guided_scoped_self_assessment(self):
+        self.client.force_login(self.user)
+        url = f"{reverse('business_profile')}?organization={self.organization.pk}"
+
+        page = self.client.get(url)
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Business basics")
+        self.assertContains(page, "How prepared do you feel?")
+        self.assertContains(page, "Mobile money")
+        self.assertEqual(page.context["profile_completion"], 0)
+        self.assertEqual(page.context["assessment_completion"], 0)
+        self.assertFalse(BusinessProfile.objects.exists())
+
+        response = self.client.post(
+            url,
+            {
+                "sector": BusinessProfile.Sector.RETAIL,
+                "county": "Nairobi",
+                "legal_structure": BusinessProfile.LegalStructure.SOLE_PROPRIETOR,
+                "year_started": "2022",
+                "staff_band": BusinessProfile.StaffBand.TWO_TO_FIVE,
+                "annual_turnover_band": BusinessProfile.TurnoverBand.PREFER_NOT_TO_SAY,
+                "operating_model": BusinessProfile.OperatingModel.BUSINESS_TO_CONSUMER,
+                "sales_channels": ["physical", "social"],
+                "payment_methods": ["cash", "mobile_money"],
+                "customer_concentration": BusinessProfile.ConcentrationBand.NOT_SURE,
+                "supplier_reliance": BusinessProfile.SupplierReliance.FEW_OPTIONS,
+                "keeps_financial_records": BusinessProfile.CheckStatus.PARTLY,
+                "separates_business_finances": BusinessProfile.CheckStatus.IN_PLACE,
+                "permits_and_licences": BusinessProfile.CheckStatus.NOT_SURE,
+                "has_supplier_alternatives": BusinessProfile.CheckStatus.PARTLY,
+                "backs_up_important_records": BusinessProfile.CheckStatus.NOT_IN_PLACE,
+                "has_business_continuity_plan": BusinessProfile.CheckStatus.NOT_SURE,
+                "protects_digital_payments": BusinessProfile.CheckStatus.IN_PLACE,
+                "has_relevant_insurance": BusinessProfile.CheckStatus.NOT_SURE,
+                "top_concerns": "Keeping the shop open during a power outage.",
+            },
+        )
+
+        self.assertRedirects(response, url)
+        profile = BusinessProfile.objects.get(organization=self.organization)
+        self.assertEqual(profile.updated_by, self.user)
+        self.assertEqual(profile.sales_channels, ["physical", "social"])
+        self.assertEqual(profile.payment_methods, ["cash", "mobile_money"])
+        self.assertEqual(profile.profile_completion, 100)
+        self.assertEqual(profile.assessment_completion, 100)
+
+    def test_business_profile_viewer_can_read_but_not_change_profile(self):
+        profile = BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.AGRICULTURE,
+            county="Nakuru",
+        )
+        viewer = get_user_model().objects.create_user(
+            "profile_viewer", "profile-viewer@example.com", "test-password"
+        )
+        OrganizationMembership.objects.create(
+            user=viewer,
+            organization=self.organization,
+            role=OrganizationMembership.Role.VIEWER,
+        )
+        self.client.force_login(viewer)
+        url = f"{reverse('business_profile')}?organization={self.organization.pk}"
+
+        page = self.client.get(url)
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "View only")
+        self.assertTrue(page.context["form"].fields["sector"].disabled)
+        response = self.client.post(
+            url,
+            {"sector": BusinessProfile.Sector.FINANCE, "county": "Nairobi"},
+        )
+        self.assertEqual(response.status_code, 403)
+        profile.refresh_from_db()
+        self.assertEqual(profile.sector, BusinessProfile.Sector.AGRICULTURE)
+
+    def test_business_profile_does_not_expose_another_organization(self):
+        other_organization = Organization.objects.create(
+            name="Other Business", code="OTHER"
+        )
+        BusinessProfile.objects.create(
+            organization=other_organization,
+            sector=BusinessProfile.Sector.FINANCE,
+            county="Mombasa",
+            top_concerns="Private details for another business",
+        )
+        BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.RETAIL,
+            county="Nairobi",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            f"{reverse('business_profile')}?organization={other_organization.pk}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["organization"], self.organization)
+        self.assertEqual(response.context["profile"].sector, BusinessProfile.Sector.RETAIL)
+        self.assertNotContains(response, "Private details for another business")
+
+    def test_business_profile_rejects_future_year_and_requires_other_sector_detail(self):
+        self.client.force_login(self.user)
+        url = f"{reverse('business_profile')}?organization={self.organization.pk}"
+        response = self.client.post(
+            url,
+            {
+                "sector": BusinessProfile.Sector.OTHER,
+                "county": "Nairobi",
+                "legal_structure": BusinessProfile.LegalStructure.OTHER,
+                "year_started": "2999",
+                "staff_band": BusinessProfile.StaffBand.OWNER_ONLY,
+                "operating_model": BusinessProfile.OperatingModel.OTHER,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "cannot be in the future")
+        self.assertContains(response, "Tell us what kind of business you run")
+        self.assertFalse(BusinessProfile.objects.exists())
+
     def test_dashboard_is_visible_to_member(self):
         self.client.force_login(self.user)
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Executive overview")
+        self.assertContains(response, "Business health")
+        self.assertContains(response, "Your daily check-in")
+        self.assertContains(response, "Make this dashboard yours")
+
+    def test_owner_dashboard_summarizes_only_current_business_actions(self):
+        urgent_risk = Risk.objects.create(
+            organization=self.organization,
+            reference="OWNER-1",
+            title="Key supplier disruption",
+            description="A key supplier may stop deliveries.",
+            risk_type=Risk.RiskType.OPERATIONAL,
+            residual_likelihood=4,
+            residual_impact=4,
+        )
+        Risk.objects.create(
+            organization=self.organization,
+            reference="OWNER-CLOSED",
+            title="Resolved issue",
+            description="No longer active.",
+            risk_type=Risk.RiskType.OPERATIONAL,
+            status=Risk.Status.CLOSED,
+        )
+        overdue_risk = Risk.objects.create(
+            organization=self.organization,
+            reference="OWNER-2",
+            title="Payment reconciliation",
+            description="Reconcile payment records.",
+            risk_type=Risk.RiskType.FINANCIAL,
+        )
+        RiskTreatment.objects.create(
+            risk=overdue_risk,
+            action="Check yesterday's payment settlements",
+            status=RiskTreatment.Status.IN_PROGRESS,
+            due_date=timezone.localdate() - timedelta(days=1),
+        )
+        RiskBotAlert.objects.create(
+            organization=self.organization,
+            risk=urgent_risk,
+            event_key="owner-dashboard-payment-alert",
+            rule_code="single_transaction_limit",
+            severity=RiskBotAlert.Severity.HIGH,
+            message="A payment exceeded the configured limit.",
+            evidence={"amount": "50000.00"},
+        )
+        LossIncident.objects.create(
+            organization=self.organization,
+            reference="INC-OWNER-1",
+            title="Supplier delivery interruption",
+            description="A scheduled delivery was missed.",
+            occurred_at=timezone.now(),
+        )
+        other_organization = Organization.objects.create(
+            name="Unrelated Business", code="UNRELATED"
+        )
+        Risk.objects.create(
+            organization=other_organization,
+            reference="PRIVATE-OWNER",
+            title="Private business risk",
+            description="Must not leak into dashboard.",
+            risk_type=Risk.RiskType.FINANCIAL,
+            residual_likelihood=5,
+            residual_impact=5,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["open_risk_count"], 2)
+        self.assertEqual(response.context["priority_risk_count"], 1)
+        self.assertEqual(response.context["overdue_action_count"], 1)
+        self.assertEqual(response.context["new_bot_alert_count"], 1)
+        self.assertEqual(response.context["open_incident_count"], 1)
+        self.assertContains(response, "Key supplier disruption")
+        self.assertContains(response, "Check yesterday&#x27;s payment settlements")
+        self.assertContains(response, "Supplier delivery interruption")
+        self.assertNotContains(response, "Private business risk")
+
+    def test_owner_dashboard_shows_business_profile_and_preparedness_without_scoring(self):
+        BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.RETAIL,
+            county="Nairobi",
+            legal_structure=BusinessProfile.LegalStructure.SOLE_PROPRIETOR,
+            year_started=2021,
+            staff_band=BusinessProfile.StaffBand.TWO_TO_FIVE,
+            annual_turnover_band=BusinessProfile.TurnoverBand.PREFER_NOT_TO_SAY,
+            operating_model=BusinessProfile.OperatingModel.BUSINESS_TO_CONSUMER,
+            sales_channels=["physical", "social"],
+            payment_methods=["cash", "mobile_money"],
+            customer_concentration=BusinessProfile.ConcentrationBand.NOT_SURE,
+            supplier_reliance=BusinessProfile.SupplierReliance.FEW_OPTIONS,
+            keeps_financial_records=BusinessProfile.CheckStatus.PARTLY,
+            protects_digital_payments=BusinessProfile.CheckStatus.IN_PLACE,
+            top_concerns="Keeping the shop open during a power outage.",
+        )
+        other_organization = Organization.objects.create(
+            name="Private Profile Business", code="PRIVATEPROFILE"
+        )
+        BusinessProfile.objects.create(
+            organization=other_organization,
+            sector=BusinessProfile.Sector.FINANCE,
+            top_concerns="Private organization information",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Business snapshot")
+        self.assertContains(response, "Retail and shops")
+        self.assertContains(response, "Nairobi")
+        self.assertContains(response, "Mobile money")
+        self.assertContains(response, "Partly")
+        self.assertContains(response, "Keeping the shop open")
+        self.assertContains(response, "not an automated risk score")
+        self.assertNotContains(response, "Private organization information")
 
     def test_risk_bot_dashboard_is_login_protected(self):
         response = self.client.get(reverse("risk_bot_dashboard"))
@@ -141,6 +389,17 @@ class RiskPlatformTests(TestCase):
         response = self.client.get(reverse("api_health"))
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["status"], "ok")
+        self.assertEqual(response.json()["service"], "Kenya ERM API")
+
+    def test_risk_form_explains_small_business_risk_assessment(self):
+        self.client.force_login(self.user)
+        response = self.client.get(reverse("risk_create"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "cause, what might happen")
+        self.assertContains(response, "If our only supplier is delayed")
+        self.assertContains(response, "Likelihood × impact")
+        self.assertContains(response, "RISK-2026-001")
 
     def create_api_credential(self, organization, token):
         return ApiCredential.objects.create(

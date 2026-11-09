@@ -1,11 +1,11 @@
-# CGS Risk Management
+# Kenya Entrepreneur Risk Management System
 
-Organization-aware enterprise risk management with a payment-risk monitoring
-bot. The Django application is the single source of truth for organizations,
-users, risk registers, bot policies, transactions, and alerts. The standalone
-Flask M-Pesa prototype and sample-only browser preview remain available under
-`riskbot/` and `tools/preview.js` for backwards-compatible demos; they are not
-the production backend.
+An organization-aware risk management and assessment system for Kenyan
+entrepreneurs and small businesses. The Django application is the single source
+of truth for business profiles, risk registers, treatments, incidents, bot
+policies, transactions, and alerts. The standalone Flask M-Pesa prototype and
+sample-only browser preview remain available under `riskbot/` and
+`tools/preview.js` for demos; they are not the production backend.
 
 ## Local development
 
@@ -29,6 +29,51 @@ python manage.py runserver 127.0.0.1:8000
 Open http://127.0.0.1:8000/. The default local database is
 `data/riskregister.sqlite3`. Never commit `.env`, database files, uploaded
 files, or credentials.
+
+## Entrepreneur business profile
+
+Signed-in members can open **Business profile** to record their sector, Kenyan
+county, business size, customer and payment channels, supplier dependence, and
+basic preparedness information. Profile details are scoped to the selected
+organization; administrators, risk managers, and analysts can update them,
+while viewers have read-only access. Annual turnover is optional and collected
+only as a broad range.
+
+The page reports profile completeness and answered-question completeness only.
+Neither is a risk score, credit decision, or substitute for professional advice.
+The responses are intended to help a business owner and their risk adviser
+identify topics for discussion; they do not automatically create risks or make
+automated decisions.
+
+## A practical risk assessment
+
+Use the business profile as context, then assess each material risk with the
+people who understand the work. Start with a clear cause-event-impact statement,
+for example: “Because we rely on one supplier, a delivery delay could stop
+production and reduce this week's sales.” Consider risks across cash flow,
+customers, suppliers, staff, permits, safety, equipment, operations, payments,
+digital security, and weather or other local disruptions. The relevant topics
+depend on the business.
+
+For each risk:
+
+1. Record the scenario, affected business activity, owner, and existing
+   safeguards.
+2. Rate likelihood and impact separately from 1 (low/rare) to 5 (high/severe).
+   The system multiplies these values for a 1–25 prioritization band: 1–5 Low,
+   6–11 Medium, 12–19 High, and 20–25 Critical.
+3. Consider whether existing controls reduce likelihood, impact, or both, and
+   record the residual ratings. Ratings support consistent discussion; they
+   are not predictions or a substitute for business judgment.
+4. Agree a practical treatment, responsible person, and due date. Track whether
+   it is planned, in progress, complete, or blocked.
+5. Set a useful early-warning indicator and review date where possible. Record
+   incidents and near misses so assessments can be updated with real experience.
+
+Reassess when the business changes, a control fails, or an incident occurs.
+Prioritize actions that protect people, essential operations, cash flow, and
+customer commitments. The system supports this conversation; it does not
+automatically certify that a business is safe or compliant.
 
 ## Staging with PostgreSQL
 

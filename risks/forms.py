@@ -1,5 +1,91 @@
 from django import forms
-from .models import Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition
+from datetime import date
+from .models import BusinessProfile, Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition
+
+
+class BusinessProfileForm(forms.ModelForm):
+    sales_channels = forms.MultipleChoiceField(
+        choices=BusinessProfile.CHANNEL_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Where do you reach or sell to customers?",
+    )
+    payment_methods = forms.MultipleChoiceField(
+        choices=BusinessProfile.PAYMENT_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="How do customers pay you?",
+    )
+
+    class Meta:
+        model = BusinessProfile
+        fields = (
+            "sector",
+            "other_sector",
+            "county",
+            "legal_structure",
+            "year_started",
+            "staff_band",
+            "annual_turnover_band",
+            "operating_model",
+            "sales_channels",
+            "payment_methods",
+            "customer_concentration",
+            "supplier_reliance",
+            "keeps_financial_records",
+            "separates_business_finances",
+            "permits_and_licences",
+            "has_supplier_alternatives",
+            "backs_up_important_records",
+            "has_business_continuity_plan",
+            "protects_digital_payments",
+            "has_relevant_insurance",
+            "top_concerns",
+        )
+        widgets = {
+            "year_started": forms.NumberInput(attrs={"min": 1800}),
+            "top_concerns": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "What is the one thing most likely to disrupt your business?",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial.setdefault("sales_channels", self.instance.sales_channels)
+            self.initial.setdefault("payment_methods", self.instance.payment_methods)
+        self.fields["other_sector"].required = False
+        self.fields["other_sector"].label = "Your business sector"
+        self.fields["other_sector"].help_text = "Fill this in if you selected Other."
+        self.fields["year_started"].required = False
+        self.fields["year_started"].help_text = "Optional. Use the year trading began."
+        self.fields["annual_turnover_band"].required = False
+        self.fields["annual_turnover_band"].help_text = (
+            "Optional estimate only. No exact figures are collected."
+        )
+        self.fields["top_concerns"].required = False
+        self.fields["top_concerns"].label = "What worries you most?"
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+        for name in ("sales_channels", "payment_methods"):
+            self.fields[name].widget.attrs["class"] = "profile-checkboxes"
+
+    def clean_year_started(self):
+        year_started = self.cleaned_data.get("year_started")
+        if year_started and year_started > date.today().year:
+            raise forms.ValidationError("The year trading began cannot be in the future.")
+        return year_started
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("sector") == BusinessProfile.Sector.OTHER and not cleaned.get(
+            "other_sector"
+        ):
+            self.add_error("other_sector", "Tell us what kind of business you run.")
+        return cleaned
 
 
 class RiskForm(forms.ModelForm):
@@ -15,7 +101,7 @@ class RiskForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         placeholders = {
-            "reference": "e.g. CRS-2026-001",
+            "reference": "e.g. RISK-2026-001",
             "title": "A concise, specific risk statement",
             "early_warning_indicator": "e.g. Exchange-rate movement exceeds limit",
             "early_warning_threshold": "e.g. USD/GBP moves beyond 1.20",
@@ -25,10 +111,18 @@ class RiskForm(forms.ModelForm):
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "")
             field.widget.attrs["class"] = (field.widget.attrs.get("class", "") + " form-control").strip()
-        self.fields["likelihood"].help_text = "1 = rare, 5 = almost certain"
-        self.fields["impact"].help_text = "1 = minor, 5 = severe"
-        self.fields["residual_likelihood"].help_text = "Likelihood after controls"
-        self.fields["residual_impact"].help_text = "Impact after controls"
+        self.fields["description"].help_text = (
+            "Describe the cause, what might happen, and its effect on money, "
+            "people, customers, or operations."
+        )
+        self.fields["likelihood"].help_text = "Chance: 1 = rare, 5 = almost certain"
+        self.fields["impact"].help_text = "Consequence: 1 = minor, 5 = severe"
+        self.fields["residual_likelihood"].help_text = (
+            "Likelihood after considering existing safeguards."
+        )
+        self.fields["residual_impact"].help_text = (
+            "Impact after considering existing safeguards."
+        )
 
     def clean(self):
         cleaned = super().clean()

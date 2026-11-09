@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Business profile | Kenya Enterprise Risk Management{% endblock %}
+{% block eyebrow %}Your business{% endblock %}
+{% block heading %}Business profile{% endblock %}
+{% block actions %}<a class="button secondary" href="/">Back to business health</a>{% endblock %}
+{% block content %}
+<div class="profile-page">
+  {% if organization %}
+  <div class="profile-intro">
+    <div>
+      <span class="eyebrow">A useful starting point</span>
+      <h2>Tell us how your business works</h2>
+      <p>Your answers help organize the risks that matter to your business. Share only what you are comfortable sharing; turnover is optional and collected as a broad range.</p>
+    </div>
+    <div class="profile-intro-aside">
+    {% if organizations|length > 1 %}
+    <form class="profile-org-filter" method="get">
+      <label for="profile-organization">Business workspace</label>
+      <select id="profile-organization" name="organization" onchange="this.form.submit()">
+        {% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
+    <div class="profile-progress-group">
+      <div class="profile-progress" aria-label="Profile completion">
+        <div><strong>{{ profile_completion }}%</strong><span>business basics</span></div>
+        <div class="profile-progress-track"><span style="width:{{ profile_completion }}%"></span></div>
+        <small>Completeness, not a risk rating.</small>
+      </div>
+      <div class="profile-progress" aria-label="Self-assessment completion">
+        <div><strong>{{ assessment_completion }}%</strong><span>preparedness questions</span></div>
+        <div class="profile-progress-track"><span style="width:{{ assessment_completion }}%"></span></div>
+        <small>Answered questions, not a score.</small>
+      </div>
+    </div>
+    </div>
+  </div>
+
+  {% if can_edit %}
+  <div class="profile-privacy-note"><strong>Your business, your information.</strong> Use estimates where helpful. You can update your answers later. This self-assessment does not give a credit decision or replace professional advice.</div>
+  {% else %}
+  <div class="profile-privacy-note"><strong>View only.</strong> Ask your organization’s administrator or risk manager if these details need updating.</div>
+  {% endif %}
+
+  <form method="post" class="form-card profile-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <section class="profile-section">
+      <div class="profile-section-heading"><span>1</span><div><h2>Business basics</h2><p>A few details help us tailor the system to your business.</p></div></div>
+      <div class="profile-fields-grid">
+        <div class="profile-field"><label for="{{ form.sector.id_for_label }}">{{ form.sector.label }}</label>{{ form.sector }}{{ form.sector.errors }}{{ form.sector.help_text }}</div>
+        <div class="profile-field"><label for="{{ form.other_sector.id_for_label }}">{{ form.other_sector.label }}</label>{{ form.other_sector }}{{ form.other_sector.errors }}<small class="profile-help">{{ form.other_sector.help_text }}</small></div>
+        <div class="profile-field"><label for="{{ form.county.id_for_label }}">{{ form.county.label }}</label>{{ form.county }}{{ form.county.errors }}<small class="profile-help">{{ form.county.help_text }}</small></div>
+        <div class="profile-field"><label for="{{ form.legal_structure.id_for_label }}">{{ form.legal_structure.label }}</label>{{ form.legal_structure }}{{ form.legal_structure.errors }}{{ form.legal_structure.help_text }}</div>
+        <div class="profile-field"><label for="{{ form.year_started.id_for_label }}">{{ form.year_started.label }}</label>{{ form.year_started }}{{ form.year_started.errors }}<small class="profile-help">{{ form.year_started.help_text }}</small></div>
+        <div class="profile-field"><label for="{{ form.staff_band.id_for_label }}">{{ form.staff_band.label }}</label>{{ form.staff_band }}{{ form.staff_band.errors }}<small class="profile-help">{{ form.staff_band.help_text }}</small></div>
+        <div class="profile-field"><label for="{{ form.annual_turnover_band.id_for_label }}">{{ form.annual_turnover_band.label }}</label>{{ form.annual_turnover_band }}{{ form.annual_turnover_band.errors }}<small class="profile-help">{{ form.annual_turnover_band.help_text }}</small></div>
+        <div class="profile-field"><label for="{{ form.operating_model.id_for_label }}">{{ form.operating_model.label }}</label>{{ form.operating_model }}{{ form.operating_model.errors }}<small class="profile-help">{{ form.operating_model.help_text }}</small></div>
+      </div>
+    </section>
+
+    <section class="profile-section">
+      <div class="profile-section-heading"><span>2</span><div><h2>Customers and getting paid</h2><p>Think about how you sell and where money comes in.</p></div></div>
+      <div class="profile-fields-grid">
+        <fieldset class="profile-field profile-choice-field"><legend>{{ form.sales_channels.label }}</legend>{{ form.sales_channels }}{{ form.sales_channels.errors }}<small class="profile-help">{{ form.sales_channels.help_text }}</small></fieldset>
+        <fieldset class="profile-field profile-choice-field"><legend>{{ form.payment_methods.label }}</legend>{{ form.payment_methods }}{{ form.payment_methods.errors }}<small class="profile-help">{{ form.payment_methods.help_text }}</small></fieldset>
+        <div class="profile-field"><label for="{{ form.customer_concentration.id_for_label }}">How much do you rely on your biggest customer?</label>{{ form.customer_concentration }}{{ form.customer_concentration.errors }}{{ form.customer_concentration.help_text }}</div>
+        <div class="profile-field"><label for="{{ form.supplier_reliance.id_for_label }}">How easy is it to replace a key supplier?</label>{{ form.supplier_reliance }}{{ form.supplier_reliance.errors }}{{ form.supplier_reliance.help_text }}</div>
+      </div>
+    </section>
+
+    <section class="profile-section">
+      <div class="profile-section-heading"><span>3</span><div><h2>How prepared do you feel?</h2><p>There are no right or wrong answers. “Not sure” is a useful answer too.</p></div></div>
+      <div class="profile-question-grid">
+        <div class="profile-field"><label for="{{ form.keeps_financial_records.id_for_label }}">I keep basic records of money in and out</label>{{ form.keeps_financial_records }}{{ form.keeps_financial_records.errors }}</div>
+        <div class="profile-field"><label for="{{ form.separates_business_finances.id_for_label }}">I keep business and personal money separate</label>{{ form.separates_business_finances }}{{ form.separates_business_finances.errors }}</div>
+        <div class="profile-field"><label for="{{ form.permits_and_licences.id_for_label }}">I know which permits or licences my business needs</label>{{ form.permits_and_licences }}{{ form.permits_and_licences.errors }}</div>
+        <div class="profile-field"><label for="{{ form.has_supplier_alternatives.id_for_label }}">I have another option for important supplies</label>{{ form.has_supplier_alternatives }}{{ form.has_supplier_alternatives.errors }}</div>
+        <div class="profile-field"><label for="{{ form.backs_up_important_records.id_for_label }}">I can recover important business records if lost</label>{{ form.backs_up_important_records }}{{ form.backs_up_important_records.errors }}</div>
+        <div class="profile-field"><label for="{{ form.has_business_continuity_plan.id_for_label }}">I know what I would do if I had to close temporarily</label>{{ form.has_business_continuity_plan }}{{ form.has_business_continuity_plan.errors }}</div>
+        <div class="profile-field"><label for="{{ form.protects_digital_payments.id_for_label }}">I use safe practices for mobile or online payments</label>{{ form.protects_digital_payments }}{{ form.protects_digital_payments.errors }}</div>
+        <div class="profile-field"><label for="{{ form.has_relevant_insurance.id_for_label }}">I have considered insurance for key business losses</label>{{ form.has_relevant_insurance }}{{ form.has_relevant_insurance.errors }}</div>
+      </div>
+    </section>
+
+    <section class="profile-section">
+      <div class="profile-section-heading"><span>4</span><div><h2>What matters most to you?</h2><p>Tell us the main challenge you would like help thinking through.</p></div></div>
+      <div class="profile-field"><label for="{{ form.top_concerns.id_for_label }}">{{ form.top_concerns.label }}</label>{{ form.top_concerns }}{{ form.top_concerns.errors }}<small class="profile-help">{{ form.top_concerns.help_text }}</small></div>
+    </section>
+
+    {% if can_edit %}
+    <div class="form-actions"><a class="button secondary" href="/">Cancel</a><button class="button" type="submit">Save business profile</button></div>
+    {% endif %}
+  </form>
+
+  {% if profile and profile.updated_at %}
+  <p class="profile-last-saved">Last updated {{ profile.updated_at|date:"j F Y, H:i" }}{% if profile.updated_by %} by {{ profile.updated_by.get_full_name|default:profile.updated_by.username }}{% endif %}.</p>
+  {% endif %}
+  {% else %}
+  <section class="card owner-no-business"><h2>No business workspace yet</h2><p>Ask an administrator to connect your account to a business workspace before adding a profile.</p></section>
+  {% endif %}
+</div>
+{% endblock %}

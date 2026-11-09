@@ -1,3 +1,4 @@
+{% load static %}
 <!doctype html>
 <html lang="en">
 <head>
@@ -5,7 +6,9 @@
   <title>{% block title %}Kenya Enterprise Risk Management{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% if request.path == "/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=3">{% endif %}
+  {% if request.path == "/business-profile/" %}<link rel="stylesheet" href="{% static 'css/business-profile.css' %}?v=2">{% endif %}
 </head>
 <body>
   <button class="mobile-menu" type="button" aria-label="Open navigation">☰</button>
@@ -13,6 +16,7 @@
     <a class="brand" href="/"><span class="brand-mark">KE</span><span><strong>Kenya ERM</strong><small>Enterprise resilience</small></span></a>
     <nav aria-label="Primary navigation">
       <a href="/" class="{% if request.path == '/' %}active{% endif %}"><span class="nav-icon">▦</span><span>Overview</span></a>
+      <a href="/business-profile/" class="{% if '/business-profile/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Business profile</span></a>
       <a href="/risks/" class="{% if '/risks/' in request.path %}active{% endif %}"><span class="nav-icon">◫</span><span>Risk register</span></a>
       <a href="/assets/" class="{% if '/assets/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Assets & dependencies</span></a>
       <a href="/scenarios/" class="{% if '/scenarios/' in request.path %}active{% endif %}"><span class="nav-icon">⟳</span><span>Scenarios & stress tests</span></a>
@@ -30,7 +34,8 @@
     <div class="user-panel"><span class="avatar">{{ request.user.username|first|upper }}</span><div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><span>{{ request.user.email }}</span></div><a href="/admin/logout/?next=/" title="Sign out">↪</a></div>
   </aside>
   <main class="main">
-    <header class="topbar"><div><span class="eyebrow">Enterprise risk</span><h1>{% block heading %}{% endblock %}</h1></div><div class="topbar-tools"><form action="/search/" method="get" class="global-search"><span>⌕</span><input name="q" placeholder="Search risks, assets, locations…" aria-label="Search the platform"><kbd>Ctrl K</kbd></form>{% block actions %}{% endblock %}</div></header>
+    <header class="topbar"><div><span class="eyebrow">{% block eyebrow %}Business risk{% endblock %}</span><h1>{% block heading %}{% endblock %}</h1></div><div class="topbar-tools"><form action="/search/" method="get" class="global-search"><span>⌕</span><input name="q" placeholder="Search risks, assets, locations…" aria-label="Search the platform"><kbd>Ctrl K</kbd></form>{% block actions %}{% endblock %}</div></header>
+    {% if messages %}<div class="app-messages" role="status">{% for message in messages %}<p>{{ message }}</p>{% endfor %}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
   <script src="/static/js/app.js"></script>

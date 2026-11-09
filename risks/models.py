@@ -87,6 +87,193 @@ class OrganizationMembership(models.Model):
     class Meta: unique_together = ("user", "organization")
 
 
+class BusinessProfile(models.Model):
+    class Sector(models.TextChoices):
+        AGRICULTURE = "agriculture", "Farming and agriculture"
+        RETAIL = "retail", "Retail and shops"
+        FOOD = "food", "Food, hospitality, and catering"
+        TRANSPORT = "transport", "Transport and logistics"
+        MANUFACTURING = "manufacturing", "Manufacturing and workshops"
+        CONSTRUCTION = "construction", "Construction and trades"
+        PROFESSIONAL = "professional", "Professional and business services"
+        HEALTH = "health", "Health and care"
+        EDUCATION = "education", "Education and training"
+        DIGITAL = "digital", "Digital and technology"
+        FINANCE = "finance", "Financial services"
+        OTHER = "other", "Other"
+
+    class LegalStructure(models.TextChoices):
+        SOLE_PROPRIETOR = "sole_proprietor", "Sole proprietor"
+        PARTNERSHIP = "partnership", "Partnership"
+        LIMITED_COMPANY = "limited_company", "Limited company"
+        COOPERATIVE = "cooperative", "Cooperative or group"
+        COMMUNITY_ORGANIZATION = "community", "Community organization"
+        OTHER = "other", "Other or not sure"
+
+    class StaffBand(models.TextChoices):
+        OWNER_ONLY = "owner_only", "Owner only"
+        TWO_TO_FIVE = "2_5", "2–5 people"
+        SIX_TO_TEN = "6_10", "6–10 people"
+        ELEVEN_TO_TWENTY = "11_20", "11–20 people"
+        TWENTY_ONE_TO_FIFTY = "21_50", "21–50 people"
+        OVER_FIFTY = "over_50", "More than 50 people"
+
+    class TurnoverBand(models.TextChoices):
+        UNDER_500K = "under_500k", "Under KES 500,000"
+        FROM_500K_TO_5M = "500k_5m", "KES 500,000–5 million"
+        FROM_5M_TO_25M = "5m_25m", "KES 5–25 million"
+        FROM_25M_TO_50M = "25m_50m", "KES 25–50 million"
+        OVER_50M = "over_50m", "Over KES 50 million"
+        PREFER_NOT_TO_SAY = "prefer_not", "Prefer not to say"
+
+    class OperatingModel(models.TextChoices):
+        BUSINESS_TO_CONSUMER = "b2c", "Selling to individuals"
+        BUSINESS_TO_BUSINESS = "b2b", "Selling to other businesses"
+        BOTH = "both", "Selling to both"
+        OTHER = "other", "Other"
+
+    class ConcentrationBand(models.TextChoices):
+        UNDER_20 = "under_20", "No customer accounts for more than 20%"
+        FROM_20_TO_50 = "20_50", "One customer accounts for 20–50%"
+        OVER_50 = "over_50", "One customer accounts for more than 50%"
+        NOT_SURE = "not_sure", "Not sure"
+
+    class SupplierReliance(models.TextChoices):
+        SINGLE_CRITICAL = "single_critical", "One supplier is hard to replace"
+        FEW_OPTIONS = "few_options", "A few suppliers; switching is difficult"
+        ALTERNATIVES = "alternatives", "I have alternative suppliers"
+        NOT_SURE = "not_sure", "Not sure"
+
+    class CheckStatus(models.TextChoices):
+        IN_PLACE = "in_place", "Yes, in place"
+        PARTLY = "partly", "Partly"
+        NOT_IN_PLACE = "not_in_place", "Not yet"
+        NOT_SURE = "not_sure", "Not sure"
+
+    COUNTY_CHOICES = [
+        ("Baringo", "Baringo"), ("Bomet", "Bomet"), ("Bungoma", "Bungoma"),
+        ("Busia", "Busia"), ("Elgeyo-Marakwet", "Elgeyo-Marakwet"),
+        ("Embu", "Embu"), ("Garissa", "Garissa"), ("Homa Bay", "Homa Bay"),
+        ("Isiolo", "Isiolo"), ("Kajiado", "Kajiado"), ("Kakamega", "Kakamega"),
+        ("Kericho", "Kericho"), ("Kiambu", "Kiambu"), ("Kilifi", "Kilifi"),
+        ("Kirinyaga", "Kirinyaga"), ("Kisii", "Kisii"), ("Kisumu", "Kisumu"),
+        ("Kitui", "Kitui"), ("Kwale", "Kwale"), ("Laikipia", "Laikipia"),
+        ("Lamu", "Lamu"), ("Machakos", "Machakos"), ("Makueni", "Makueni"),
+        ("Mandera", "Mandera"), ("Marsabit", "Marsabit"), ("Meru", "Meru"),
+        ("Migori", "Migori"), ("Mombasa", "Mombasa"), ("Murang'a", "Murang'a"),
+        ("Nairobi", "Nairobi"), ("Nakuru", "Nakuru"), ("Nandi", "Nandi"),
+        ("Narok", "Narok"), ("Nyamira", "Nyamira"), ("Nyandarua", "Nyandarua"),
+        ("Nyeri", "Nyeri"), ("Samburu", "Samburu"), ("Siaya", "Siaya"),
+        ("Taita-Taveta", "Taita-Taveta"), ("Tana River", "Tana River"),
+        ("Tharaka-Nithi", "Tharaka-Nithi"), ("Trans Nzoia", "Trans Nzoia"),
+        ("Turkana", "Turkana"), ("Uasin Gishu", "Uasin Gishu"),
+        ("Vihiga", "Vihiga"), ("Wajir", "Wajir"), ("West Pokot", "West Pokot"),
+    ]
+
+    CHANNEL_CHOICES = [
+        ("physical", "Physical shop or market"),
+        ("social", "Social media"),
+        ("website", "Own website or online shop"),
+        ("marketplace", "Online marketplace"),
+        ("wholesale", "Wholesale or distributors"),
+        ("field", "Direct or field sales"),
+        ("other", "Other"),
+    ]
+    PAYMENT_CHOICES = [
+        ("cash", "Cash"),
+        ("mobile_money", "Mobile money (for example, M-Pesa)"),
+        ("bank", "Bank transfer"),
+        ("card", "Card"),
+        ("online", "Online payment provider"),
+        ("other", "Other"),
+    ]
+
+    organization = models.OneToOneField(
+        Organization, on_delete=models.CASCADE, related_name="business_profile"
+    )
+    sector = models.CharField(max_length=24, choices=Sector.choices, blank=True)
+    other_sector = models.CharField(max_length=100, blank=True)
+    county = models.CharField(max_length=32, choices=COUNTY_CHOICES, blank=True)
+    legal_structure = models.CharField(
+        max_length=24, choices=LegalStructure.choices, blank=True
+    )
+    year_started = models.PositiveSmallIntegerField(null=True, blank=True)
+    staff_band = models.CharField(max_length=16, choices=StaffBand.choices, blank=True)
+    annual_turnover_band = models.CharField(
+        max_length=16, choices=TurnoverBand.choices, blank=True
+    )
+    operating_model = models.CharField(
+        max_length=8, choices=OperatingModel.choices, blank=True
+    )
+    sales_channels = models.JSONField(default=list, blank=True)
+    payment_methods = models.JSONField(default=list, blank=True)
+    customer_concentration = models.CharField(
+        max_length=12, choices=ConcentrationBand.choices, blank=True
+    )
+    supplier_reliance = models.CharField(
+        max_length=20, choices=SupplierReliance.choices, blank=True
+    )
+    keeps_financial_records = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    separates_business_finances = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    permits_and_licences = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    has_supplier_alternatives = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    backs_up_important_records = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    has_business_continuity_plan = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    protects_digital_payments = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    has_relevant_insurance = models.CharField(
+        max_length=16, choices=CheckStatus.choices, blank=True
+    )
+    top_concerns = models.TextField(blank=True)
+    updated_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="updated_business_profiles",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def profile_completion(self):
+        fields = (
+            self.sector,
+            self.county,
+            self.legal_structure,
+            self.staff_band,
+            self.operating_model,
+        )
+        return round(sum(value not in (None, "") for value in fields) / len(fields) * 100)
+
+    @property
+    def assessment_completion(self):
+        fields = (
+            self.keeps_financial_records,
+            self.separates_business_finances,
+            self.permits_and_licences,
+            self.has_supplier_alternatives,
+            self.backs_up_important_records,
+            self.has_business_continuity_plan,
+            self.protects_digital_payments,
+            self.has_relevant_insurance,
+        )
+        return round(sum(bool(value) for value in fields) / len(fields) * 100)
+
+    def __str__(self):
+        return f"Business profile - {self.organization}"
+
+
 class Location(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="locations")
     name = models.CharField(max_length=160)

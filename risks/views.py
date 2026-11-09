@@ -1,4 +1,5 @@
 from django.contrib.auth.decorators import login_required
+from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q
@@ -18,6 +19,7 @@ from .bot_services import evaluate_bot_transaction
 
 from .forms import (
     AssuranceTestForm,
+    BusinessProfileForm,
     FrameworkForm,
     FrameworkRequirementForm,
     GovernanceCommitteeForm,
@@ -37,6 +39,7 @@ from .models import (
     Asset,
     AssetDependency,
     AssuranceTest,
+    BusinessProfile,
     BusinessUnit,
     ComplianceFramework,
     ComplianceMapping,
@@ -100,28 +103,209 @@ def global_search(request):
 
 
 @login_required
+def business_profile(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(pk=request.GET.get("organization")).first()
+        or organizations.first()
+    )
+    if not organization:
+        return render(
+            request,
+            "business_profile.html",
+            {
+                "organizations": organizations,
+                "organization": None,
+                "can_edit": False,
+            },
+        )
+
+    role = organization_role(request.user, organization)
+    can_edit = role in {
+        OrganizationMembership.Role.ADMIN,
+        OrganizationMembership.Role.RISK_MANAGER,
+        OrganizationMembership.Role.ANALYST,
+    }
+    profile = BusinessProfile.objects.filter(organization=organization).first()
+    if request.method == "POST":
+        if not can_edit:
+            raise PermissionDenied
+        if profile is None:
+            profile = BusinessProfile(organization=organization)
+        form = BusinessProfileForm(request.POST, instance=profile)
+        if form.is_valid():
+            profile = form.save(commit=False)
+            profile.organization = organization
+            profile.updated_by = request.user
+            profile.save()
+            messages.success(request, "Business profile saved.")
+            return redirect(f"/business-profile/?organization={organization.pk}")
+    else:
+        form = BusinessProfileForm(instance=profile)
+
+    if not can_edit:
+        for field in form.fields.values():
+            field.disabled = True
+
+    return render(
+        request,
+        "business_profile.html",
+        {
+            "organizations": organizations,
+            "organization": organization,
+            "profile": profile,
+            "form": form,
+            "can_edit": can_edit,
+            "profile_completion": profile.profile_completion if profile else 0,
+            "assessment_completion": profile.assessment_completion if profile else 0,
+        },
+    )
+
+
+@login_required
 def dashboard(request):
     organizations = user_organizations(request)
     organization = organizations.filter(pk=request.GET.get("organization")).first() or organizations.first()
-    risks = Risk.objects.filter(organization=organization) if organization else Risk.objects.none()
-    map_risks = risks.exclude(location__isnull=True)
-    ratings = {name: risks.filter(residual_likelihood__gt=0).filter(residual_impact__gt=0).count() for name in ()}
-
-    type_counts = list(risks.values("risk_type").annotate(count=Count("id")))
-    rating_counts = {"Critical": 0, "High": 0, "Medium": 0, "Low": 0}
-    for risk in risks:
+    risks = (
+        Risk.objects.filter(organization=organization).exclude(
+            status=Risk.Status.CLOSED
+        )
+        if organization
+        else Risk.objects.none()
+    )
+    open_risk_count = risks.count()
+    rating_counts = {name: 0 for name in ("Critical", "High", "Medium", "Low")}
+    priority_risks = []
+    for risk in risks.select_related("location"):
         rating_counts[risk.rating] += 1
+        if risk.rating in {"Critical", "High"}:
+            priority_risks.append(risk)
+    priority_risks.sort(key=lambda risk: risk.residual_score, reverse=True)
+
+    today = timezone.localdate()
+    policy = (
+        RiskBotPolicy.objects.filter(organization=organization).first()
+        if organization
+        else None
+    )
+    business_profile_record = (
+        BusinessProfile.objects.filter(organization=organization).first()
+        if organization
+        else None
+    )
+    profile_sales_channels = []
+    profile_payment_methods = []
+    profile_preparedness = []
+    if business_profile_record:
+        profile_sales_channels = [
+            label
+            for value, label in BusinessProfile.CHANNEL_CHOICES
+            if value in business_profile_record.sales_channels
+        ]
+        profile_payment_methods = [
+            label
+            for value, label in BusinessProfile.PAYMENT_CHOICES
+            if value in business_profile_record.payment_methods
+        ]
+        check_status_labels = dict(BusinessProfile.CheckStatus.choices)
+        preparedness_fields = (
+            ("keeps_financial_records", "Keeps basic money-in and money-out records"),
+            ("separates_business_finances", "Keeps business and personal money separate"),
+            ("permits_and_licences", "Understands required permits and licences"),
+            ("has_supplier_alternatives", "Has an alternative for important supplies"),
+            ("backs_up_important_records", "Can recover important business records"),
+            ("has_business_continuity_plan", "Has a plan for a temporary closure"),
+            ("protects_digital_payments", "Uses safe mobile and online payment practices"),
+            ("has_relevant_insurance", "Has considered insurance for key losses"),
+        )
+        profile_preparedness = [
+            {
+                "label": label,
+                "status": getattr(business_profile_record, field_name),
+                "status_label": check_status_labels.get(
+                    getattr(business_profile_record, field_name), "Not answered"
+                ),
+                "status_class": getattr(business_profile_record, field_name)
+                or "not-answered",
+            }
+            for field_name, label in preparedness_fields
+        ]
+    treatments = (
+        RiskTreatment.objects.filter(risk__organization=organization)
+        .exclude(status=RiskTreatment.Status.COMPLETE)
+        if organization
+        else RiskTreatment.objects.none()
+    )
+    overdue_actions = treatments.filter(due_date__lt=today).select_related(
+        "risk", "owner"
+    )
+    due_today_actions = treatments.filter(due_date=today).select_related(
+        "risk", "owner"
+    )
+    bot_alerts = (
+        RiskBotAlert.objects.filter(
+            organization=organization, status=RiskBotAlert.Status.NEW
+        ).select_related("risk", "transaction")
+        if organization
+        else RiskBotAlert.objects.none()
+    )
+    open_incidents = (
+        LossIncident.objects.filter(organization=organization)
+        .exclude(status=LossIncident.Status.CLOSED)
+        if organization
+        else LossIncident.objects.none()
+    )
+    total_actions_due = overdue_actions.count() + due_today_actions.count()
+    setup_needed = bool(
+        organization
+        and (
+            not business_profile_record
+            or business_profile_record.profile_completion < 100
+            or not risks.exists()
+            or not RiskBotPolicy.objects.filter(organization=organization).exists()
+            or not RiskBotTransaction.objects.filter(
+                organization=organization
+            ).exists()
+        )
+    )
 
     context = {
         "organizations": organizations,
         "organization": organization,
-        "risks": risks[:8],
-        "risk_count": risks.count(),
-        "open_treatments": RiskTreatment.objects.filter(risk__in=risks).exclude(status="complete").count(),
-        "critical_count": rating_counts["Critical"],
+        "policy": policy,
+        "business_profile": business_profile_record,
+        "business_profile_completion": (
+            business_profile_record.profile_completion
+            if business_profile_record
+            else 0
+        ),
+        "profile_sales_channels": profile_sales_channels,
+        "profile_payment_methods": profile_payment_methods,
+        "profile_preparedness": profile_preparedness,
+        "priority_risks": priority_risks[:5],
+        "open_risk_count": open_risk_count,
+        "priority_risk_count": rating_counts["Critical"] + rating_counts["High"],
+        "open_incident_count": open_incidents.count(),
+        "open_incidents": open_incidents.select_related("risk")[:5],
+        "new_bot_alert_count": bot_alerts.count(),
+        "new_bot_alerts": bot_alerts[:5],
+        "overdue_action_count": overdue_actions.count(),
+        "due_today_action_count": due_today_actions.count(),
+        "total_actions_due": total_actions_due,
+        "overdue_actions": overdue_actions[:5],
+        "due_today_actions": due_today_actions[:5],
         "rating_counts": rating_counts,
-        "type_counts": type_counts,
-        "map_risks": map_risks,
+        "risk_profile": [
+            {
+                "name": name,
+                "count": count,
+                "percentage": round(count / open_risk_count * 100)
+                if open_risk_count
+                else 0,
+            }
+            for name, count in rating_counts.items()
+        ],
+        "setup_needed": setup_needed,
     }
     return render(request, "dashboard.html", context)
 
@@ -695,7 +879,7 @@ def integrations(request):
                     IntegrationEvent.objects.create(organization=organization, event_type="webhook.created", message=f"Webhook {webhook.name} registered.", actor=request.user)
                     return redirect(f"/integrations/?organization={organization.pk}")
             elif action == "create_token":
-                token = "cgs_" + secrets.token_urlsafe(32)
+                token = "kerms_" + secrets.token_urlsafe(32)
                 token_hash = hashlib.sha256(token.encode()).hexdigest()
                 credential = ApiCredential.objects.create(organization=organization, name=request.POST.get("name") or "API credential", token_prefix=token[:12], token_hash=token_hash, created_by=request.user)
                 IntegrationEvent.objects.create(organization=organization, event_type="api_token.created", message=f"API credential {credential.name} created.", actor=request.user)
@@ -736,7 +920,9 @@ def api_risk_summary(request):
 
 
 def api_health(request):
-    return JsonResponse({"status": "ok", "service": "CGS Risk API", "version": "v1"})
+    return JsonResponse(
+        {"status": "ok", "service": "Kenya ERM API", "version": "v1"}
+    )
 
 
 def _bot_api_organization(request):
