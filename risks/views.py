@@ -714,6 +714,10 @@ def dashboard(request):
     return render(request, "dashboard.html", context)
 
 
+def public_home(request):
+    return render(request, "public_home.html")
+
+
 @login_required
 def risk_bot_dashboard(request):
     organizations = user_organizations(request)

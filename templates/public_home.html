@@ -1,0 +1,158 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <meta name="description" content="KERMS helps Kenyan entrepreneurs understand business risks, map operating sites, complete practical assessments, and manage actions with confidence.">
+  <title>KERMS.CO.KE | Kenya Enterprise Risk Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=3">
+</head>
+<body>
+  <a class="site-skip-link" href="#main-content">Skip to content</a>
+  <header class="site-header">
+    <a class="site-brand" href="/" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="#how-it-works">How it works</a>
+      <a href="#platform">The platform</a>
+      {% if request.user.is_authenticated %}
+      <a class="site-nav-cta" href="{% url 'dashboard' %}">Open platform <span aria-hidden="true">↗</span></a>
+      {% else %}
+      <a href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in</a>
+      {% endif %}
+    </nav>
+  </header>
+
+  <main id="main-content">
+    <section class="site-hero">
+      <div class="site-hero-copy">
+        <div class="site-overline"><span></span> Practical risk management for Kenyan businesses</div>
+        <h1>Know what could interrupt your business.<em> Plan what to do next.</em></h1>
+        <p class="site-hero-lede">A clear, practical way for entrepreneurs to understand their business, explore real-world risks, and turn priorities into manageable actions.</p>
+        <div class="site-hero-actions">
+          {% if request.user.is_authenticated %}
+          <a class="site-button site-button-primary" href="{% url 'dashboard' %}">Open your workspace <span aria-hidden="true">→</span></a>
+          {% else %}
+          <a class="site-button site-button-primary" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
+          {% endif %}
+          <a class="site-button site-button-secondary" href="#how-it-works">See how it works</a>
+        </div>
+        <div class="site-hero-note"><span aria-hidden="true">✓</span> Built for informed decisions, not automated business scores.</div>
+      </div>
+
+      <div class="site-hero-art" aria-label="Illustration of the KERMS business risk workflow">
+        <div class="site-art-glow"></div>
+        <div class="site-art-topline"><span class="site-art-logo">K</span><span>YOUR BUSINESS, IN CONTEXT</span><span class="site-live-dot"></span></div>
+        <div class="site-art-title">A clearer way to manage risk</div>
+        <div class="site-art-subtitle">A practical journey shaped around your business.</div>
+        <div class="site-art-steps">
+          <div class="site-art-step is-done"><span>✓</span><div><strong>Understand your business</strong><small>Business model and everyday operations</small></div><b>01</b></div>
+          <div class="site-art-step is-current"><span>⌖</span><div><strong>Map where you operate</strong><small>Sites, location context, and dependencies</small></div><b>02</b></div>
+          <div class="site-art-step"><span>↗</span><div><strong>Assess what matters</strong><small>Structured check-ins and risk discussions</small></div><b>03</b></div>
+          <div class="site-art-step"><span>✓</span><div><strong>Agree practical actions</strong><small>Owners, next steps, and review dates</small></div><b>04</b></div>
+        </div>
+        <div class="site-art-foot"><span>YOUR JOURNEY</span><span>Clear steps. Your decisions.</span></div>
+      </div>
+      <div class="site-hero-bottom" aria-hidden="true"><span>KENYA</span><span>PEOPLE</span><span>OPERATIONS</span><span>RESILIENCE</span></div>
+    </section>
+
+    <section class="site-proof-strip" aria-label="KERMS approach">
+      <div><span class="site-proof-icon">01</span><strong>Made for entrepreneurs</strong><small>Useful for small and growing businesses</small></div>
+      <div><span class="site-proof-icon">02</span><strong>Grounded in your context</strong><small>Your business model and operating sites</small></div>
+      <div><span class="site-proof-icon">03</span><strong>Focused on action</strong><small>Clear priorities, owners, and follow-up</small></div>
+    </section>
+
+    <section class="site-section" id="how-it-works">
+      <div class="site-section-heading">
+        <span class="site-section-kicker">A simple place to start</span>
+        <h2>Risk management that fits the way you work.</h2>
+        <p>Start with what you know about your business. Build a more useful picture over time, one practical step at a time.</p>
+      </div>
+      <div class="site-workflow-carousel" role="region" aria-label="KERMS workflow steps" tabindex="0">
+        <div class="site-workflow-viewport">
+        <div class="site-workflow-grid">
+        <article class="site-workflow-card">
+          <span class="site-card-number">01 / BUSINESS</span><span class="site-card-icon">⌂</span>
+          <h3>Describe your business</h3>
+          <p>Capture your sector, customers, team, suppliers, sales channels, and the way your business operates.</p>
+        </article>
+        <article class="site-workflow-card">
+          <span class="site-card-number">02 / PLACES</span><span class="site-card-icon">⌖</span>
+          <h3>Map your operating sites</h3>
+          <p>Keep shops, farms, market stalls, workshops, and other operating locations in one business view.</p>
+        </article>
+        <article class="site-workflow-card">
+          <span class="site-card-number">03 / ASSESS</span><span class="site-card-icon">◎</span>
+          <h3>Talk through real risks</h3>
+          <p>Use repeatable check-ins and guided prompts to identify what could affect customers, cash flow, or operations.</p>
+        </article>
+        <article class="site-workflow-card">
+          <span class="site-card-number">04 / ACT</span><span class="site-card-icon">↗</span>
+          <h3>Turn priorities into action</h3>
+          <p>Record risks, agree practical treatments, assign owners, and review progress as circumstances change.</p>
+        </article>
+        </div>
+        </div>
+        <div class="site-workflow-controls">
+          <div class="site-workflow-position" role="status" aria-live="polite">
+            <strong><span data-workflow-current>01</span></strong>
+            <span class="site-workflow-position-track"><span data-workflow-progress></span></span>
+            <span>04</span>
+          </div>
+          <span class="site-workflow-hint">Use the arrows to follow each step</span>
+          <div class="site-workflow-buttons">
+            <button type="button" class="site-workflow-arrow" data-workflow-prev aria-label="Show previous workflow steps" disabled>←</button>
+            <button type="button" class="site-workflow-arrow" data-workflow-next aria-label="Show next workflow steps">→</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="site-context-section" id="platform">
+      <div class="site-context-art" aria-hidden="true">
+        <div class="site-context-card"><span>BUSINESS SNAPSHOT</span><strong>One workspace.<br>Useful context.</strong><div><i></i><i></i><i></i></div></div>
+        <div class="site-context-pin"><span>⌖</span><div><strong>Your business sites</strong><small>Location details you provide</small></div></div>
+      </div>
+      <div class="site-context-copy">
+        <span class="site-section-kicker">A platform built around your business</span>
+        <h2>See the whole picture. Keep the decisions yours.</h2>
+        <p>Bring your business profile, locations, assessments, risk register, and follow-up actions into one connected workspace. Keep assessments distinct from your profile and your risk records.</p>
+        <ul>
+          <li><span>✓</span> Business-focused workflows and repeatable assessments</li>
+          <li><span>✓</span> Site-specific risk records linked to locations</li>
+          <li><span>✓</span> Practical action tracking instead of a single business score</li>
+        </ul>
+        <p class="site-honesty-note">Map pins show locations you enter; they do not detect hazards. Prompts support discussion and do not replace verified local information or professional advice.</p>
+        {% if request.user.is_authenticated %}
+        <a class="site-text-link" href="{% url 'dashboard' %}">Continue to your workspace <span aria-hidden="true">→</span></a>
+        {% else %}
+        <a class="site-text-link" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="site-bottom-cta">
+      <div><span class="site-section-kicker">Start with one useful step</span><h2>Build confidence in the decisions ahead.</h2><p>Make your business context clearer. Choose what to work on next.</p></div>
+      {% if request.user.is_authenticated %}
+      <a class="site-button site-button-light" href="{% url 'dashboard' %}">Open KERMS <span aria-hidden="true">→</span></a>
+      {% else %}
+      <a class="site-button site-button-light" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
+      {% endif %}
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <a class="site-brand site-brand-footer" href="/" aria-label="KERMS.CO.KE home"><span class="site-brand-mark" aria-hidden="true">K</span><span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span></a>
+    <p>Practical risk management for Kenyan entrepreneurs.</p>
+    <span class="site-footer-note">Make informed decisions. Keep your business moving.</span>
+  </footer>
+  <script src="{% static 'js/public-home.js' %}?v=2"></script>
+</body>
+</html>

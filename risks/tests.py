@@ -56,7 +56,53 @@ class RiskPlatformTests(TestCase):
 
     def test_dashboard_requires_login(self):
         response = self.client.get(reverse("dashboard"))
-        self.assertEqual(response.status_code, 302)
+        self.assertRedirects(
+            response, f"{reverse('login')}?next={reverse('dashboard')}"
+        )
+
+    def test_public_home_introduces_kerms_without_exposing_workspace_data(self):
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "KERMS.CO.KE")
+        self.assertContains(response, "Kenya Enterprise Risk Management System")
+        self.assertContains(response, "Sign in to KERMS")
+        self.assertContains(response, f"{reverse('login')}?next={reverse('dashboard')}")
+        self.assertContains(response, "Show next workflow steps")
+        self.assertContains(response, "Use the arrows to follow each step")
+        self.assertNotContains(response, "CGS Financial Services")
+
+    def test_branded_login_authenticates_and_returns_to_dashboard(self):
+        login_url = f"{reverse('login')}?next={reverse('dashboard')}"
+        page = self.client.get(login_url)
+
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "Welcome back.")
+        self.assertContains(page, "KERMS.CO.KE")
+
+        response = self.client.post(
+            login_url,
+            {"username": "analyst", "password": "test-password"},
+        )
+
+        self.assertRedirects(response, reverse("dashboard"))
+
+    def test_platform_logout_returns_to_public_home(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("logout"))
+
+        self.assertRedirects(response, reverse("home"))
+        self.assertContains(self.client.get(reverse("home")), "Sign in to KERMS")
+
+    def test_authenticated_public_home_links_to_platform_workspace(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("home"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Open your workspace")
+        self.assertContains(response, reverse("dashboard"))
 
     def test_business_profile_requires_login(self):
         response = self.client.get(reverse("business_profile"))

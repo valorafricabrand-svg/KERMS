@@ -1,4 +1,4 @@
-# Kenya Entrepreneur Risk Management System
+# KERMS.CO.KE — Kenya Enterprise Risk Management System
 
 An organization-aware risk management and assessment system for Kenyan
 entrepreneurs and small businesses. The Django application is the single source
@@ -26,7 +26,11 @@ python manage.py migrate
 python manage.py runserver 127.0.0.1:8000
 ```
 
-Open http://127.0.0.1:8000/. The default local database is
+Open http://127.0.0.1:8000/ for the public KERMS product website and
+http://127.0.0.1:8000/dashboard/ for the signed-in business workspace. Sign in
+at `/login/`; workspace access is provisioned by an administrator. The `.co.ke`
+name is the product identity; public DNS, TLS, hosting, and email still need to
+be configured for a production deployment. The default local database is
 `data/riskregister.sqlite3`. Never commit `.env`, database files, uploaded
 files, or credentials.
 

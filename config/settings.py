@@ -142,7 +142,8 @@ STORAGES = {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
     },
 }
-LOGIN_URL = "/admin/login/"
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/dashboard/"
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"

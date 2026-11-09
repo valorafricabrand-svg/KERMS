@@ -3,12 +3,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}Kenya Enterprise Risk Management{% endblock %}</title>
+  <title>{% block title %}KERMS | Kenya Enterprise Risk Management System{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'css/kerms-brand.css' %}?v=1">
   <link rel="stylesheet" href="{% static 'css/entrepreneur-workflow.css' %}">
-  {% if request.path == "/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=7">{% endif %}
+  {% if request.path == "/dashboard/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=7">{% endif %}
   {% if request.path == "/business-profile/" %}<link rel="stylesheet" href="{% static 'css/business-profile.css' %}?v=2">{% endif %}
   {% if '/locations/' in request.path %}<link rel="stylesheet" href="{% static 'css/business-locations.css' %}?v=3">{% endif %}
   {% if '/assessments/' in request.path %}<link rel="stylesheet" href="{% static 'css/entrepreneur-assessments.css' %}?v=2">{% endif %}
@@ -16,9 +17,9 @@
 <body>
   <button class="mobile-menu" type="button" aria-label="Open navigation">☰</button>
   <aside class="sidebar" id="primary-navigation">
-    <a class="brand" href="/"><span class="brand-mark">KE</span><span><strong>Kenya ERM</strong><small>Enterprise resilience</small></span></a>
+    <a class="brand" href="{% url 'dashboard' %}"><span class="brand-mark">K</span><span><strong>KERMS</strong><small>Kenya Enterprise Risk Management</small></span></a>
     <nav aria-label="Primary navigation">
-      <a href="/" class="{% if request.path == '/' %}active{% endif %}"><span class="nav-icon">▦</span><span>Overview</span></a>
+      <a href="{% url 'dashboard' %}" class="{% if request.path == '/dashboard/' %}active{% endif %}"><span class="nav-icon">▦</span><span>Overview</span></a>
       <a href="/business-profile/" class="{% if '/business-profile/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Business profile</span></a>
       <a href="/locations/" class="{% if '/locations/' in request.path %}active{% endif %}"><span class="nav-icon">⌖</span><span>Business locations</span></a>
       <a href="/assessments/" class="{% if '/assessments/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Entrepreneur assessments</span></a>
@@ -41,7 +42,7 @@
       </details>
     </nav>
     <a href="/risks/new/" class="sidebar-action">+ Register new risk</a>
-    <div class="user-panel"><span class="avatar">{{ request.user.username|first|upper }}</span><div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><span>{{ request.user.email }}</span></div><a href="/admin/logout/?next=/" title="Sign out">↪</a></div>
+    <div class="user-panel"><span class="avatar">{{ request.user.username|first|upper }}</span><div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><span>{{ request.user.email }}</span></div><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit" title="Sign out" aria-label="Sign out">↪</button></form></div>
   </aside>
   <main class="main">
     <header class="topbar"><div><span class="eyebrow">{% block eyebrow %}Business risk{% endblock %}</span><h1>{% block heading %}{% endblock %}</h1></div><div class="topbar-tools"><form action="/search/" method="get" class="global-search"><span>⌕</span><input name="q" placeholder="Search risks, assets, locations…" aria-label="Search the platform"><kbd>Ctrl K</kbd></form>{% block actions %}{% endblock %}</div></header>

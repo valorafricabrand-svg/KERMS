@@ -1,0 +1,47 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>Sign in | KERMS.CO.KE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=1">
+</head>
+<body class="auth-page">
+  <a class="site-skip-link" href="#sign-in-form">Skip to sign in</a>
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+    <a class="auth-home-link" href="{% url 'home' %}">Back to home</a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <section class="auth-card" aria-labelledby="sign-in-title">
+      <span class="auth-kicker">Your business workspace</span>
+      <h1 id="sign-in-title">Welcome back.</h1>
+      <p class="auth-intro">Sign in to continue managing your business profile, assessments, locations, and practical risk actions.</p>
+      {% if form.errors %}
+      <div class="auth-error" role="alert">Your username or password was not recognised. Please check your details and try again.</div>
+      {% endif %}
+      <form method="post" id="sign-in-form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ next }}">
+        <label for="{{ form.username.id_for_label }}">Username</label>
+        {{ form.username }}
+        <label for="{{ form.password.id_for_label }}">Password</label>
+        {{ form.password }}
+        <button class="auth-submit" type="submit">Sign in securely <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="auth-help">Need access to a business workspace? Contact your workspace administrator.</p>
+      <a class="auth-footer-link" href="{% url 'home' %}">← Return to KERMS.CO.KE</a>
+    </section>
+    <p class="auth-assurance">KERMS supports informed business decisions. It does not certify that a business is safe or risk-free.</p>
+  </main>
+</body>
+</html>

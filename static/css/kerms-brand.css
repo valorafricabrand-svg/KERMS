@@ -1,0 +1,6 @@
+.brand .brand-mark { background: #19745d; }
+.brand strong { letter-spacing: .01em; }
+.user-panel form { display: flex; margin: 0; }
+.user-panel button { padding: 5px 7px; border: 0; border-radius: 5px; background: transparent; color: #cbd9e3; font: inherit; cursor: pointer; }
+.user-panel button:hover { background: #1a405b; color: #fff; }
+.user-panel button:focus-visible { outline: 2px solid #8ce2bf; outline-offset: 2px; }
