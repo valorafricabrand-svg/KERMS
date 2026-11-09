@@ -342,9 +342,117 @@ class RiskPlatformTests(TestCase):
         self.client.force_login(self.user)
         response = self.client.get(reverse("dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Business health")
-        self.assertContains(response, "Your daily check-in")
-        self.assertContains(response, "Make this dashboard yours")
+        self.assertContains(response, "Business risk overview")
+        self.assertContains(response, "Your risk management journey")
+        self.assertContains(response, "not a safety rating")
+        self.assertEqual(response.context["journey_step_count"], 4)
+        self.assertEqual(response.context["completed_journey_steps"], 0)
+        self.assertEqual(response.context["journey_progress"], 0)
+        self.assertEqual(
+            response.context["next_journey_step"]["title"], "Describe your business"
+        )
+
+    def test_dashboard_journey_uses_read_only_links_for_viewers(self):
+        OrganizationMembership.objects.filter(
+            user=self.user, organization=self.organization
+        ).update(role=OrganizationMembership.Role.VIEWER)
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["can_edit"])
+        self.assertEqual(
+            response.context["journey_steps"][2]["url"],
+            f"/assessments/?organization={self.organization.pk}",
+        )
+        self.assertEqual(response.context["journey_steps"][3]["url"], "/risks/")
+
+    def test_dashboard_explains_when_user_has_no_business_workspace(self):
+        OrganizationMembership.objects.filter(
+            user=self.user, organization=self.organization
+        ).delete()
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["organization"])
+        self.assertContains(response, "No business workspace yet")
+        self.assertEqual(response.context["journey_step_count"], 0)
+
+    def test_dashboard_journey_uses_business_records_not_risk_scores(self):
+        BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.RETAIL,
+            county="Nairobi",
+            legal_structure=BusinessProfile.LegalStructure.SOLE_PROPRIETOR,
+            staff_band=BusinessProfile.StaffBand.TWO_TO_FIVE,
+            operating_model=BusinessProfile.OperatingModel.BUSINESS_TO_CONSUMER,
+        )
+        Location.objects.create(
+            organization=self.organization,
+            name="Nairobi shop",
+            country="Kenya",
+            latitude="-1.286389",
+            longitude="36.817223",
+        )
+        Location.objects.create(
+            organization=self.organization,
+            name="Market stall",
+            country="Kenya",
+        )
+        EntrepreneurAssessment.objects.create(
+            organization=self.organization,
+            status=EntrepreneurAssessment.Status.SUBMITTED,
+            responses=self.assessment_answers(),
+        )
+        risk = Risk.objects.create(
+            organization=self.organization,
+            reference="JOURNEY-1",
+            title="Supplier disruption",
+            description="A supplier may not deliver on time.",
+            risk_type=Risk.RiskType.OPERATIONAL,
+        )
+        RiskTreatment.objects.create(
+            risk=risk,
+            action="Identify an alternative supplier",
+        )
+        other_organization = Organization.objects.create(
+            name="Other journey business", code="JOURNEYOTHER"
+        )
+        Location.objects.create(
+            organization=other_organization,
+            name="Other business site",
+            country="Kenya",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("dashboard"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["location_count"], 2)
+        self.assertEqual(response.context["mapped_location_count"], 1)
+        self.assertEqual(response.context["action_plan_count"], 1)
+        self.assertEqual(
+            [step["complete"] for step in response.context["journey_steps"]],
+            [True, False, True, True],
+        )
+        self.assertEqual(response.context["journey_progress"], 75)
+        self.assertEqual(
+            response.context["next_journey_step"]["title"], "Map your operating sites"
+        )
+        self.assertContains(response, "1 mapped of 2 sites")
+        self.assertNotContains(response, "Business score")
+
+        second_site = Location.objects.get(name="Market stall")
+        second_site.latitude = "-1.310000"
+        second_site.longitude = "36.820000"
+        second_site.save(update_fields=["latitude", "longitude"])
+
+        complete_response = self.client.get(reverse("dashboard"))
+        self.assertEqual(complete_response.context["journey_progress"], 100)
+        self.assertIsNone(complete_response.context["next_journey_step"])
 
     def test_owner_dashboard_summarizes_only_current_business_actions(self):
         urgent_risk = Risk.objects.create(

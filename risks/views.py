@@ -458,6 +458,12 @@ def entrepreneur_assessment_detail(request, pk):
 def dashboard(request):
     organizations = user_organizations(request)
     organization = organizations.filter(pk=request.GET.get("organization")).first() or organizations.first()
+    role = organization_role(request.user, organization) if organization else None
+    can_edit = role in {
+        OrganizationMembership.Role.ADMIN,
+        OrganizationMembership.Role.RISK_MANAGER,
+        OrganizationMembership.Role.ANALYST,
+    }
     risks = (
         Risk.objects.filter(organization=organization).exclude(
             status=Risk.Status.CLOSED
@@ -563,22 +569,101 @@ def dashboard(request):
         else LossIncident.objects.none()
     )
     total_actions_due = overdue_actions.count() + due_today_actions.count()
-    setup_needed = bool(
-        organization
-        and (
-            not business_profile_record
-            or business_profile_record.profile_completion < 100
-            or not EntrepreneurAssessment.objects.filter(
-                organization=organization
-            ).exists()
-            or not risks.exists()
-            or not mapped_location_count
-        )
+    active_risk_statuses = (
+        Risk.Status.IDENTIFIED,
+        Risk.Status.ASSESSING,
+        Risk.Status.TREATING,
+        Risk.Status.MONITORING,
+        Risk.Status.ACCEPTED,
+    )
+    action_plan_count = (
+        RiskTreatment.objects.filter(
+            risk__organization=organization,
+            risk__status__in=active_risk_statuses,
+        ).count()
+        if organization
+        else 0
+    )
+    assessment_complete = bool(
+        latest_assessment
+        and latest_assessment.status != EntrepreneurAssessment.Status.DRAFT
+        and latest_assessment.answered_count == latest_assessment.question_count
+    )
+    business_model_complete = bool(
+        business_profile_record
+        and business_profile_record.profile_completion == 100
+    )
+    all_sites_mapped = bool(
+        location_count and mapped_location_count == location_count
+    )
+    action_plan_started = bool(open_risk_count and action_plan_count)
+    journey_steps = [
+        {
+            "title": "Describe your business",
+            "description": (
+                f"{business_profile_record.profile_completion}% of core profile details added"
+                if business_profile_record
+                else "Add your sector, customers, and how the business operates."
+            ),
+            "complete": business_model_complete,
+            "url": f"/business-profile/?organization={organization.pk}",
+        },
+        {
+            "title": "Map your operating sites",
+            "description": (
+                f"{mapped_location_count} of {location_count} sites have a map pin."
+                if location_count
+                else "Add each shop, farm, market, workshop, or other site."
+            ),
+            "complete": all_sites_mapped,
+            "url": f"/locations/?organization={organization.pk}",
+        },
+        {
+            "title": "Complete a business check-in",
+            "description": (
+                f"{latest_assessment.answered_count} of {latest_assessment.question_count} topics answered."
+                if latest_assessment
+                else "Talk through the everyday issues that could interrupt your work."
+            ),
+            "complete": assessment_complete,
+            "url": (
+                f"/assessments/{latest_assessment.pk}/"
+                if latest_assessment
+                else (
+                    f"/assessments/new/?organization={organization.pk}"
+                    if can_edit
+                    else f"/assessments/?organization={organization.pk}"
+                )
+            ),
+        },
+        {
+            "title": "Turn priorities into action",
+            "description": (
+                f"{open_risk_count} active risks · {action_plan_count} documented actions."
+                if open_risk_count
+                else "Record a risk that matters and agree a practical first action."
+            ),
+            "complete": action_plan_started,
+            "url": (
+                "/risks/"
+                if action_plan_started
+                else (
+                    f"/risks/new/?organization={organization.pk}"
+                    if can_edit
+                    else "/risks/"
+                )
+            ),
+        },
+    ] if organization else []
+    completed_journey_steps = sum(step["complete"] for step in journey_steps)
+    next_journey_step = next(
+        (step for step in journey_steps if not step["complete"]), None
     )
 
     context = {
         "organizations": organizations,
         "organization": organization,
+        "can_edit": can_edit,
         "policy": policy,
         "business_profile": business_profile_record,
         "business_profile_completion": (
@@ -604,6 +689,16 @@ def dashboard(request):
         "total_actions_due": total_actions_due,
         "overdue_actions": overdue_actions[:5],
         "due_today_actions": due_today_actions[:5],
+        "action_plan_count": action_plan_count,
+        "journey_steps": journey_steps,
+        "completed_journey_steps": completed_journey_steps,
+        "journey_step_count": len(journey_steps),
+        "journey_progress": (
+            round(completed_journey_steps / len(journey_steps) * 100)
+            if journey_steps
+            else 0
+        ),
+        "next_journey_step": next_journey_step,
         "rating_counts": rating_counts,
         "risk_profile": [
             {
@@ -615,7 +710,6 @@ def dashboard(request):
             }
             for name, count in rating_counts.items()
         ],
-        "setup_needed": setup_needed,
     }
     return render(request, "dashboard.html", context)
 

@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Business health | Kenya Enterprise Risk Management{% endblock %}
-{% block heading %}Business health{% endblock %}
+{% block title %}Business risk overview | Kenya Enterprise Risk Management{% endblock %}
+{% block heading %}Business risk overview{% endblock %}
 {% block actions %}
 <a class="button secondary" href="/incidents/">Report an issue</a>
-<a class="button" href="/risks/new/">+ Add a risk</a>
+{% if can_edit %}<a class="button" href="/risks/new/?organization={{ organization.pk }}">+ Add a risk</a>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="owner-dashboard">
   {% if organization %}
   <div class="owner-welcome">
     <div>
-      <p class="owner-kicker">Your daily check-in</p>
+      <p class="owner-kicker">A practical plan for your business</p>
       <h2>{{ organization.name }}</h2>
-      <p>A quick look at what could interrupt business and what needs your attention.</p>
+      <p>Understand your business, map where it operates, and turn real concerns into practical actions.</p>
       <a class="owner-profile-link" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Business profile {{ business_profile_completion }}% complete{% else %}Add your business profile{% endif %} <span aria-hidden="true">→</span></a>
     </div>
     <form class="owner-org-filter" method="get">
@@ -23,7 +23,48 @@
     </form>
   </div>
 
-  <section class="owner-metrics" aria-label="Business health summary">
+  <section class="owner-journey" aria-labelledby="journey-title">
+    <div class="owner-journey-heading">
+      <div>
+        <span class="eyebrow">Your risk management journey</span>
+        <h2 id="journey-title">Build a clearer picture, step by step</h2>
+        <p>Progress tracks setup tasks only; it is not a safety rating or a measure of business performance.</p>
+      </div>
+      <div class="owner-journey-progress">
+        <strong>{{ completed_journey_steps }} of {{ journey_step_count }} complete</strong>
+        <div class="owner-progress-track" role="progressbar" aria-label="Business risk workflow setup progress" aria-valuemin="0" aria-valuemax="{{ journey_step_count }}" aria-valuenow="{{ completed_journey_steps }}">
+          <span style="width: {{ journey_progress }}%"></span>
+        </div>
+      </div>
+    </div>
+    <ol class="owner-journey-steps">
+      {% for step in journey_steps %}
+      <li class="owner-journey-step {% if step.complete %}is-complete{% elif next_journey_step and step.title == next_journey_step.title %}is-next{% endif %}">
+        <a href="{{ step.url }}">
+          <span class="owner-step-number" aria-hidden="true">{% if step.complete %}✓{% else %}{{ forloop.counter }}{% endif %}</span>
+          <span class="owner-step-copy">
+            <strong>{{ step.title }}</strong>
+            <small>{{ step.description }}</small>
+          </span>
+          <span class="owner-step-status">{% if step.complete %}Complete{% elif next_journey_step and step.title == next_journey_step.title %}Up next{% else %}To do{% endif %}</span>
+        </a>
+      </li>
+      {% endfor %}
+    </ol>
+    {% if next_journey_step %}
+    <div class="owner-journey-next">
+      <div><span class="eyebrow">A useful next step</span><strong>{{ next_journey_step.title }}</strong></div>
+      <a class="button" href="{{ next_journey_step.url }}">{% if can_edit %}Continue{% else %}View{% endif %} <span aria-hidden="true">→</span></a>
+    </div>
+    {% else %}
+    <div class="owner-journey-next is-finished">
+      <div><span class="eyebrow">Setup complete</span><strong>Keep your assessment and action plan current as the business changes.</strong></div>
+      <a class="button secondary" href="/risks/">Review risk register <span aria-hidden="true">→</span></a>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="owner-metrics" aria-label="Current business risk activity">
     <a class="owner-metric" href="/risks/">
       <span class="owner-metric-icon blue" aria-hidden="true">◎</span>
       <span class="owner-metric-label">Risks to keep an eye on</span>
@@ -36,11 +77,11 @@
       <strong>{{ total_actions_due }}</strong>
       <small>{% if overdue_action_count %}{{ overdue_action_count }} overdue{% else %}Nothing overdue{% endif %}{% if due_today_action_count %} · {{ due_today_action_count }} due today{% endif %}</small>
     </a>
-    <a class="owner-metric {% if new_bot_alert_count %}needs-attention{% endif %}" href="/risk-bot/">
-      <span class="owner-metric-icon red" aria-hidden="true">!</span>
-      <span class="owner-metric-label">New payment alerts</span>
-      <strong>{{ new_bot_alert_count }}</strong>
-      <small>{% if new_bot_alert_count %}Review flagged activity{% else %}No new alerts{% endif %}</small>
+    <a class="owner-metric" href="/locations/?organization={{ organization.pk }}">
+      <span class="owner-metric-icon green" aria-hidden="true">⌖</span>
+      <span class="owner-metric-label">Sites on the map</span>
+      <strong>{{ mapped_location_count }}</strong>
+      <small>{{ mapped_location_count }} mapped of {{ location_count }} site{{ location_count|pluralize }}</small>
     </a>
     <a class="owner-metric" href="/incidents/">
       <span class="owner-metric-icon green" aria-hidden="true">↗</span>
@@ -118,23 +159,6 @@
       {% endif %}
     </article>
   </section>
-
-  {% if setup_needed %}
-  <section class="owner-setup" aria-labelledby="setup-title">
-    <div class="owner-setup-icon" aria-hidden="true">✦</div>
-    <div class="owner-setup-copy">
-      <span class="eyebrow">A helpful first step</span>
-      <h2 id="setup-title">Make this dashboard yours</h2>
-      <p>Start with your business model and operating sites, then assess the risks that could interrupt your work and track practical actions.</p>
-      <div class="owner-setup-links">
-        {% if not business_profile or business_profile_completion < 100 %}<a class="button" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Continue business profile{% else %}Set up business profile{% endif %}</a>{% endif %}
-        {% if not mapped_location_count %}<a class="button" href="/locations/?organization={{ organization.pk }}">Map your business sites</a>{% endif %}
-        {% if not latest_assessment %}<a class="button secondary" href="/assessments/new/?organization={{ organization.pk }}">Start an assessment</a>{% endif %}
-        {% if not open_risk_count %}<a class="button" href="/risks/new/">Add your first risk</a>{% else %}<a class="button secondary" href="/risks/">Review your risk list</a>{% endif %}
-      </div>
-    </div>
-  </section>
-  {% endif %}
 
   <div class="owner-section-heading">
     <div><span class="eyebrow">Your next steps</span><h2>What needs attention</h2></div>
