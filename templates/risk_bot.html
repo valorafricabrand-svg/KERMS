@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Risk monitoring bot | Kenya Enterprise Risk Management{% endblock %}
+{% block heading %}Risk monitoring bot{% endblock %}
+{% block actions %}<a class="button secondary" href="/admin/risks/riskbotpolicy/">Configure policy</a>{% endblock %}
+{% block content %}
+<form class="filters" method="get" style="margin-bottom:14px">
+  <label style="display:flex;align-items:center;gap:8px">Organization
+    <select name="organization" onchange="this.form.submit()">
+      {% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+{% if organization %}
+<section class="metrics">
+  <article><span>Monitoring status</span><strong>{% if policy and policy.enabled %}Active{% elif policy %}Paused{% else %}Not configured{% endif %}</strong><small>{% if policy %}{{ policy.timezone }} · {{ policy.currency }}{% else %}Set organization-specific bot rules{% endif %}</small></article>
+  <article class="danger"><span>New alerts</span><strong>{{ new_alert_count }}</strong><small>{{ alert_count }} total alert(s)</small></article>
+  <article><span>Payments monitored</span><strong>{{ transaction_count }}</strong><small>Deduplicated by organization and receipt</small></article>
+  <article><span>Linked register risk</span><strong>{% if policy.linked_risk %}{{ policy.linked_risk.reference }}{% else %}—{% endif %}</strong><small>{% if policy.linked_risk %}{{ policy.linked_risk.title }}{% else %}No risk linked to bot policy{% endif %}</small></article>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><span class="eyebrow">Organization policy</span><h2>Configured payment rules</h2></div></div>
+  {% if policy %}
+  <div class="table-wrap"><table><thead><tr><th>Rule</th><th>Threshold</th><th>Timezone / currency</th><th>State</th></tr></thead><tbody>
+    <tr><td>Single payment</td><td>{{ policy.max_single_transaction|floatformat:2 }} {{ policy.currency }}</td><td>{{ policy.timezone }}</td><td>{% if policy.enabled %}Enabled{% else %}Paused{% endif %}</td></tr>
+    <tr><td>Daily payer total</td><td>{{ policy.max_daily_payer_total|floatformat:2 }} {{ policy.currency }}</td><td>{{ policy.timezone }}</td><td>{% if policy.enabled %}Enabled{% else %}Paused{% endif %}</td></tr>
+    <tr><td>Daily payer frequency</td><td>{{ policy.max_daily_payer_transactions }} payments</td><td>{{ policy.timezone }}</td><td>{% if policy.enabled %}Enabled{% else %}Paused{% endif %}</td></tr>
+  </tbody></table></div>
+  {% else %}
+  <p>No bot policy is configured for {{ organization.name }} yet. Create one in <a href="/admin/risks/riskbotpolicy/">Django administration</a> to enable organization-specific monitoring.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head"><div><span class="eyebrow">Review queue</span><h2>Risk alerts</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Detected</th><th>Rule / evidence summary</th><th>Severity</th><th>Status</th><th>Linked risk</th><th>Receipt</th></tr></thead><tbody>
+    {% for alert in alerts %}
+    <tr><td>{{ alert.created_at|date:"d M Y H:i" }}</td><td>{{ alert.message }}</td><td><span class="badge {{ alert.severity }}">{{ alert.get_severity_display }}</span></td><td>{{ alert.get_status_display }}</td><td>{% if alert.risk %}<a href="/risks/{{ alert.risk.pk }}/">{{ alert.risk.reference }} · {{ alert.risk.title }}</a>{% else %}—{% endif %}</td><td>{{ alert.transaction.receipt_number|default:"—" }}</td></tr>
+    {% empty %}<tr><td colspan="6">No bot alerts for this organization yet.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+
+<section class="card">
+  <div class="card-head"><div><span class="eyebrow">Latest activity</span><h2>Recent payments</h2></div></div>
+  <div class="table-wrap"><table><thead><tr><th>Time</th><th>Receipt</th><th>Amount</th><th>Payer</th><th>Source</th></tr></thead><tbody>
+    {% for payment in transactions %}
+    <tr><td>{{ payment.transaction_time|date:"d M Y H:i" }}</td><td>{{ payment.receipt_number }}</td><td>{{ payment.amount|floatformat:2 }} {{ payment.currency }}</td><td>{{ payment.masked_payer }}</td><td>{{ payment.source }}</td></tr>
+    {% empty %}<tr><td colspan="5">No payments have been ingested for this organization.</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% else %}
+<section class="card"><h2>No organization access</h2><p>Your account is not currently a member of an organization. Ask an administrator to grant access before viewing bot data.</p></section>
+{% endif %}
+{% endblock %}

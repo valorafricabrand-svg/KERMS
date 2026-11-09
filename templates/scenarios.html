@@ -7,9 +7,23 @@
 <div class="metrics">
   <article><span>Scenarios</span><strong>{{ scenarios.count }}</strong><small>Across the organization</small></article>
   <article><span>Assessed</span><strong>{{ selected.impacts.count|default:0 }}</strong><small>Calculated impact records</small></article>
-  <article class="danger"><span>Gross exposure</span><strong>{% if selected %}{{ selected.expected_exposure }}{% else %}0{% endif %}</strong><small>Scenario value</small></article>
+  <article class="danger"><span>Illustrative exposure</span><strong>{% if selected %}KES {{ selected.expected_exposure|floatformat:2 }}{% else %}KES 0.00{% endif %}</strong><small>Your assumption, not a forecast</small></article>
   <article><span>Status</span><strong class="metric-text">{% if selected %}{{ selected.get_status_display }}{% else %}Draft{% endif %}</strong><small>{% if selected.assessed_at %}Assessed {{ selected.assessed_at|date:"d M Y" }}{% else %}Ready for assessment{% endif %}</small></article>
 </div>
+<section class="card">
+  <div class="card-head"><div><span class="eyebrow">Kenya enterprise scenario prompts</span><h2>Imagine what could change</h2></div></div>
+  <p>These are prompts for discussion, not forecasts, verified alerts, or risk assessments. Choose one to edit it, add your own local evidence and KES estimate, and link it to risks and assets already in your register.</p>
+  <div class="grid-2">
+    {% for item in scenario_templates %}
+    <article class="card">
+      <div class="card-head"><div><span class="eyebrow">{{ item.audience }}</span><h3>{{ item.name }}</h3></div></div>
+      <p>{{ item.description }}</p>
+      <p><strong>Think about:</strong> {{ item.assumptions }}</p>
+      <a class="button secondary" href="/scenarios/?organization={{ organization.pk }}&amp;template={{ item.key }}#scenario-builder">Use this prompt</a>
+    </article>
+    {% endfor %}
+  </div>
+</section>
 <div class="grid-2">
   <section class="card">
     <div class="card-head"><div><span class="eyebrow">Scenario library</span><h2>Stress tests</h2></div></div>
@@ -19,12 +33,13 @@
     <div class="card-head"><div><span class="eyebrow">Selected scenario</span><h2>{% if selected %}{{ selected.name }}{% else %}Create a scenario{% endif %}</h2></div>{% if selected %}<span class="badge {{ selected.status }}">{{ selected.get_status_display }}</span>{% endif %}</div>
     {% if selected %}
       <p>{{ selected.description }}</p>
+      <p><strong>Illustrative only:</strong> assumptions and exposure are user-entered estimates, not predictions. Review local evidence before using this assessment for decisions.</p>
       <dl class="facts"><dt>Type</dt><dd>{{ selected.get_scenario_type_display }}</dd><dt>Severity</dt><dd>{{ selected.severity }} / 5</dd><dt>Assumptions</dt><dd>{{ selected.assumptions|default:"No assumptions recorded" }}</dd><dt>Approved by</dt><dd>{% if selected.approved_by %}{% if selected.approved_by.get_full_name %}{{ selected.approved_by.get_full_name }}{% else %}{{ selected.approved_by.username }}{% endif %}{% else %}Pending approval{% endif %}</dd></dl>
       <div class="scenario-coverage"><span><strong>{{ selected.risks.count }}</strong> risks</span><span><strong>{{ selected.assets.count }}</strong> assets</span><span><strong>{{ selected.suppliers.count }}</strong> suppliers</span><span><strong>{{ selected.locations.count }}</strong> locations</span></div>
-      <form method="post" class="scenario-actions">{% csrf_token %}<input type="hidden" name="scenario" value="{{ selected.pk }}"><button name="action" value="run" class="button" type="submit">Run assessment</button>{% if selected.status != "approved" %}<button name="action" value="approve" class="button secondary" type="submit">Approve scenario</button>{% endif %}</form>
+      <form method="post" action="/scenarios/?organization={{ organization.pk }}" class="scenario-actions">{% csrf_token %}<input type="hidden" name="scenario" value="{{ selected.pk }}"><button name="action" value="run" class="button" type="submit">Run illustrative assessment</button>{% if selected.status != "approved" %}<button name="action" value="approve" class="button secondary" type="submit">Approve scenario</button>{% endif %}</form>
       {% if selected.impacts.exists %}<h3 class="impact-title">Calculated impacts</h3><div class="table-wrap"><table><thead><tr><th>Level</th><th>Affected item</th><th>Type</th><th>Exposure</th></tr></thead><tbody>{% for impact in selected.impacts.all %}<tr><td>{% if impact.cascade_level == 0 %}Direct{% else %}Cascade 1{% endif %}</td><td>{{ impact.risk|default:impact.asset|default:impact.supplier }}</td><td>{% if impact.risk %}Risk{% elif impact.asset %}Asset{% else %}Supplier{% endif %}</td><td>{{ impact.exposure }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-state compact"><p>Run the assessment to calculate direct and dependency impacts.</p></div>{% endif %}
     {% else %}<div class="empty-state compact"><p>Create the first scenario using the form below.</p></div>{% endif %}
   </section>
 </div>
-<section class="card scenario-builder"><div class="card-head"><div><span class="eyebrow">Build a stress test</span><h2>Scenario assumptions</h2></div></div><form method="post" class="form-card scenario-form">{% csrf_token %}<input type="hidden" name="action" value="create"><div class="form-grid"><div><label for="id_name">Scenario name</label>{{ form.name }}</div><div><label for="id_scenario_type">Scenario type</label>{{ form.scenario_type }}</div><div><label for="id_severity">Severity (1–5)</label>{{ form.severity }}</div><div><label for="id_expected_exposure">Gross expected exposure</label>{{ form.expected_exposure }}</div></div><label for="id_description">Description</label>{{ form.description }}<label for="id_assumptions">Key assumptions</label>{{ form.assumptions }}<div class="form-grid"><div><label>Related risks</label>{{ form.risks }}</div><div><label>Related assets</label>{{ form.assets }}</div><div><label>Related suppliers</label>{{ form.suppliers }}</div><div><label>Related locations</label>{{ form.locations }}</div><div><label>Related portfolios</label>{{ form.portfolios }}</div></div><div class="form-actions"><button class="button" type="submit">Create scenario</button></div></form></section>
+<section class="card scenario-builder" id="scenario-builder"><div class="card-head"><div><span class="eyebrow">Build a stress test</span><h2>Scenario assumptions</h2></div></div><form method="post" action="/scenarios/?organization={{ organization.pk }}" class="form-card scenario-form">{% csrf_token %}<input type="hidden" name="action" value="create"><div class="form-grid"><div><label for="id_name">Scenario name</label>{{ form.name }}</div><div><label for="id_scenario_type">Scenario type</label>{{ form.scenario_type }}</div><div><label for="id_severity">Severity (1–5)</label>{{ form.severity }}</div><div><label for="id_expected_exposure">Illustrative KES exposure</label>{{ form.expected_exposure }}</div></div><label for="id_description">Description</label>{{ form.description }}<label for="id_assumptions">Key assumptions</label>{{ form.assumptions }}<div class="form-grid"><div><label>Related risks</label>{{ form.risks }}</div><div><label>Related assets</label>{{ form.assets }}</div><div><label>Related suppliers</label>{{ form.suppliers }}</div><div><label>Related locations</label>{{ form.locations }}</div><div><label>Related portfolios</label>{{ form.portfolios }}</div></div><p>Assessment results use a simplified severity and residual-risk calculation. They are planning aids, not actuarial forecasts or verified loss estimates.</p><div class="form-actions"><button class="button" type="submit">Save as draft scenario</button></div></form></section>
 {% endblock %}

@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path("", views.dashboard, name="dashboard"),
+    path("risk-bot/", views.risk_bot_dashboard, name="risk_bot_dashboard"),
     path("search/", views.global_search, name="global_search"),
     path("risks/", views.risk_register, name="risk_register"),
     path("risks/new/", views.risk_create, name="risk_create"),
@@ -11,11 +12,15 @@ urlpatterns = [
     path("reports/generate/", views.generate_board_report, name="generate_board_report"),
     path("assets/", views.assets, name="assets"),
     path("scenarios/", views.scenarios, name="scenarios"),
+    path("management/", views.management, name="management"),
     path("assurance/", views.assurance, name="assurance"),
     path("incidents/", views.incidents, name="incidents"),
     path("integrations/", views.integrations, name="integrations"),
     path("api/v1/health/", views.api_health, name="api_health"),
     path("api/v1/risks/", views.api_risk_summary, name="api_risk_summary"),
+    path("api/v1/bot/policy/", views.api_bot_policy, name="api_bot_policy"),
+    path("api/v1/bot/transactions/", views.api_bot_transactions, name="api_bot_transactions"),
+    path("api/v1/bot/alerts/", views.api_bot_alerts, name="api_bot_alerts"),
     path("governance/", views.governance, name="governance"),
     path("intelligence/", views.intelligence, name="intelligence"),
     path("intelligence/<int:pk>/acknowledge/", views.acknowledge_alert, name="acknowledge_alert"),

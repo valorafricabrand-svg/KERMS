@@ -1,21 +1,88 @@
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.db.models import Count, Q
+from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
 import hashlib
 import secrets
-from decimal import Decimal
+import re
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from zoneinfo import ZoneInfo
 
-from .forms import RiskForm, ScenarioForm, RiskControlForm, AssuranceTestForm, LossIncidentForm, FrameworkForm, FrameworkRequirementForm, ComplianceMappingForm, GovernanceCommitteeForm, GovernancePolicyForm, IntegrationConnectionForm, WebhookEndpointForm
-from .models import Organization, Risk, RiskTreatment, RiskControl, ExternalRiskSource, ExternalRiskAlert, Asset, Supplier, Portfolio, BusinessUnit, LegalEntity, AssetDependency, Location, StressScenario, ScenarioImpact, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, ApiCredential, IntegrationEvent, WebhookEndpoint
+from .bot_services import evaluate_bot_transaction
+
+from .forms import (
+    AssuranceTestForm,
+    FrameworkForm,
+    FrameworkRequirementForm,
+    GovernanceCommitteeForm,
+    GovernancePolicyForm,
+    IntegrationConnectionForm,
+    LossIncidentForm,
+    ManagementRiskAssessmentForm,
+    ManagementTransitionForm,
+    ComplianceMappingForm,
+    RiskControlForm,
+    RiskForm,
+    ScenarioForm,
+    WebhookEndpointForm,
+)
+from .models import (
+    ApiCredential,
+    Asset,
+    AssetDependency,
+    AssuranceTest,
+    BusinessUnit,
+    ComplianceFramework,
+    ComplianceMapping,
+    ExternalRiskAlert,
+    ExternalRiskSource,
+    FrameworkRequirement,
+    GovernanceCommittee,
+    GovernancePolicy,
+    IntegrationConnection,
+    IntegrationEvent,
+    LegalEntity,
+    LossIncident,
+    Location,
+    ManagementTransition,
+    ManagementTransitionRiskReview,
+    Organization,
+    OrganizationMembership,
+    Portfolio,
+    Risk,
+    RiskAssessment,
+    RiskBotAlert,
+    RiskBotPolicy,
+    RiskBotTransaction,
+    RiskControl,
+    RiskTreatment,
+    ScenarioImpact,
+    StressScenario,
+    Supplier,
+    WebhookEndpoint,
+)
 from .asset_forms import AssetForm, SupplierForm, DependencyForm
+from .scenario_library import SCENARIO_TEMPLATES, get_scenario_template
 
 
 def user_organizations(request):
     if request.user.is_superuser:
         return Organization.objects.all()
     return Organization.objects.filter(memberships__user=request.user)
+
+
+def organization_role(user, organization):
+    if user.is_superuser:
+        return OrganizationMembership.Role.ADMIN
+    return OrganizationMembership.objects.filter(
+        user=user, organization=organization
+    ).values_list("role", flat=True).first()
 
 
 @login_required
@@ -57,6 +124,64 @@ def dashboard(request):
         "map_risks": map_risks,
     }
     return render(request, "dashboard.html", context)
+
+
+@login_required
+def risk_bot_dashboard(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(pk=request.GET.get("organization")).first()
+        or organizations.first()
+    )
+    policy = (
+        RiskBotPolicy.objects.select_related("linked_risk").filter(
+            organization=organization
+        ).first()
+        if organization
+        else None
+    )
+    alerts = (
+        RiskBotAlert.objects.filter(organization=organization)
+        .select_related("risk", "transaction")[:25]
+        if organization
+        else RiskBotAlert.objects.none()
+    )
+    transactions = (
+        RiskBotTransaction.objects.filter(organization=organization)[:10]
+        if organization
+        else RiskBotTransaction.objects.none()
+    )
+    for payment in transactions:
+        payment.masked_payer = (
+            f"{'*' * max(0, len(payment.payer_phone) - 4)}{payment.payer_phone[-4:]}"
+            if payment.payer_phone
+            else "Unknown"
+        )
+    context = {
+        "organizations": organizations,
+        "organization": organization,
+        "policy": policy,
+        "alerts": alerts,
+        "transactions": transactions,
+        "alert_count": (
+            RiskBotAlert.objects.filter(organization=organization).count()
+            if organization
+            else 0
+        ),
+        "new_alert_count": (
+            RiskBotAlert.objects.filter(
+                organization=organization, status=RiskBotAlert.Status.NEW
+            ).count()
+            if organization
+            else 0
+        ),
+        "transaction_count": (
+            RiskBotTransaction.objects.filter(organization=organization).count()
+            if organization
+            else 0
+        ),
+    }
+    return render(request, "risk_bot.html", context)
 
 
 @login_required
@@ -242,9 +367,21 @@ def incidents(request):
 @login_required
 def scenarios(request):
     organizations = user_organizations(request)
-    organization = organizations.filter(pk=request.GET.get("organization")).first() or organizations.first()
+    organization_id = request.GET.get("organization") or request.POST.get("organization")
+    organization = organizations.filter(pk=organization_id).first() or organizations.first()
     scenario_rows = StressScenario.objects.none()
-    form = ScenarioForm(organization=organization)
+    template = get_scenario_template(request.GET.get("template"))
+    initial = None
+    if template:
+        initial = {
+            "name": template.name,
+            "scenario_type": template.scenario_type,
+            "description": template.description,
+            "assumptions": template.assumptions,
+            "severity": 3,
+            "expected_exposure": "0.00",
+        }
+    form = ScenarioForm(organization=organization, initial=initial)
     selected = None
     if organization:
         scenario_rows = StressScenario.objects.filter(organization=organization)
@@ -266,30 +403,45 @@ def scenarios(request):
                 selected.impacts.all().delete()
                 severity_factor = Decimal(selected.severity) / Decimal("5")
                 direct_risk_ids = set(selected.risks.values_list("pk", flat=True))
-                direct_risk_ids.update(Risk.objects.filter(assets__in=selected.assets.all()).values_list("pk", flat=True))
-                for risk in Risk.objects.filter(pk__in=direct_risk_ids):
+                direct_risk_ids.update(
+                    Risk.objects.filter(
+                        organization=organization, assets__in=selected.assets.all()
+                    ).values_list("pk", flat=True)
+                )
+                for risk in Risk.objects.filter(
+                    pk__in=direct_risk_ids, organization=organization
+                ):
                     exposure = selected.expected_exposure * severity_factor * (Decimal(risk.residual_score) / Decimal("25"))
                     ScenarioImpact.objects.create(scenario=selected, risk=risk, cascade_level=0,
                         exposure=exposure.quantize(Decimal("0.01")),
                         narrative="Directly affected by the scenario or linked through a selected asset.")
-                direct_assets = set(selected.assets.all())
+                direct_assets = set(selected.assets.filter(organization=organization))
                 for asset in direct_assets:
                     exposure = selected.expected_exposure * severity_factor * (Decimal(asset.criticality) / Decimal("5"))
                     ScenarioImpact.objects.create(scenario=selected, asset=asset, cascade_level=0,
                         exposure=exposure.quantize(Decimal("0.01")), narrative="Directly selected asset impact.")
                 cascade_assets = set()
-                cascade_suppliers = set(selected.suppliers.all())
+                cascade_suppliers = set(selected.suppliers.filter(organization=organization))
                 for asset in direct_assets:
-                    for dependency in AssetDependency.objects.filter(source_asset=asset).select_related("target_asset", "supplier"):
-                        if dependency.target_asset:
+                    dependencies = AssetDependency.objects.filter(
+                        source_asset=asset
+                    ).select_related("target_asset", "supplier")
+                    for dependency in dependencies:
+                        if (
+                            dependency.target_asset
+                            and dependency.target_asset.organization_id == organization.pk
+                        ):
                             cascade_assets.add(dependency.target_asset)
-                        if dependency.supplier:
+                        if (
+                            dependency.supplier
+                            and dependency.supplier.organization_id == organization.pk
+                        ):
                             cascade_suppliers.add(dependency.supplier)
                 for asset in cascade_assets:
                     exposure = selected.expected_exposure * severity_factor * (Decimal(asset.criticality) / Decimal("5")) * Decimal("0.75")
                     ScenarioImpact.objects.create(scenario=selected, asset=asset, cascade_level=1,
                         exposure=exposure.quantize(Decimal("0.01")), narrative="First-level dependency cascade.")
-                    for risk in asset.risks.all():
+                    for risk in asset.risks.filter(organization=organization):
                         exposure = exposure * (Decimal(risk.residual_score) / Decimal("25"))
                         ScenarioImpact.objects.create(scenario=selected, risk=risk, cascade_level=1,
                             exposure=exposure.quantize(Decimal("0.01")), narrative="Risk connected to a cascade-affected asset.")
@@ -307,7 +459,146 @@ def scenarios(request):
                 selected.save(update_fields=["status", "approved_by", "approved_at", "updated_at"])
             return redirect(f"/scenarios/?organization={organization.pk}&scenario={selected.pk}")
     return render(request, "scenarios.html", {"organizations": organizations, "organization": organization,
-        "scenarios": scenario_rows, "selected": selected, "form": form})
+        "scenarios": scenario_rows, "selected": selected, "form": form,
+        "scenario_templates": SCENARIO_TEMPLATES})
+
+
+@login_required
+def management(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(pk=request.GET.get("organization")).first()
+        or organizations.first()
+    )
+    transitions = ManagementTransition.objects.none()
+    selected = None
+    reviews = ManagementTransitionRiskReview.objects.none()
+    transition_form = ManagementTransitionForm()
+    assessment_form = None
+    selected_review = None
+    role = organization_role(request.user, organization) if organization else None
+    can_manage = role in {
+        OrganizationMembership.Role.ADMIN,
+        OrganizationMembership.Role.RISK_MANAGER,
+    }
+    can_assess = can_manage or role == OrganizationMembership.Role.ANALYST
+
+    if organization:
+        transitions = ManagementTransition.objects.filter(
+            organization=organization
+        ).annotate(
+            review_count=Count("reviews"),
+            completed_count=Count(
+                "reviews", filter=Q(reviews__assessment__isnull=False)
+            ),
+        )
+        transition_id = request.GET.get("transition") or request.POST.get("transition")
+        selected = transitions.filter(pk=transition_id).first() if transition_id else transitions.first()
+        if selected:
+            reviews = selected.reviews.select_related(
+                "risk", "assessment", "reviewed_by"
+            ).all()
+            review_id = request.GET.get("review") or request.POST.get("review")
+            selected_review = reviews.filter(pk=review_id).first() if review_id else None
+
+    if request.method == "POST" and organization:
+        action = request.POST.get("action")
+        if action == "create_transition":
+            if not can_manage:
+                raise PermissionDenied
+            transition_form = ManagementTransitionForm(request.POST)
+            if transition_form.is_valid():
+                with transaction.atomic():
+                    transition = transition_form.save(commit=False)
+                    transition.organization = organization
+                    transition.recorded_by = request.user
+                    transition.save()
+                    open_risks = Risk.objects.filter(
+                        organization=organization
+                    ).exclude(status=Risk.Status.CLOSED)
+                    ManagementTransitionRiskReview.objects.bulk_create(
+                        [
+                            ManagementTransitionRiskReview(
+                                transition=transition, risk=risk
+                            )
+                            for risk in open_risks
+                        ]
+                    )
+                return redirect(
+                    f"/management/?organization={organization.pk}"
+                    f"&transition={transition.pk}"
+                )
+        elif action == "complete_review":
+            if not can_assess:
+                raise PermissionDenied
+            if selected_review and not selected_review.is_complete:
+                assessment_form = ManagementRiskAssessmentForm(request.POST)
+                if assessment_form.is_valid():
+                    values = assessment_form.cleaned_data
+                    with transaction.atomic():
+                        assessment = RiskAssessment.objects.create(
+                            risk=selected_review.risk,
+                            assessor=request.user,
+                            management_transition=selected_review.transition,
+                            **values,
+                        )
+                        risk = selected_review.risk
+                        risk.likelihood = values["likelihood"]
+                        risk.impact = values["impact"]
+                        risk.residual_likelihood = values["residual_likelihood"]
+                        risk.residual_impact = values["residual_impact"]
+                        risk.review_date = timezone.localdate()
+                        risk.save(
+                            update_fields=(
+                                "likelihood",
+                                "impact",
+                                "residual_likelihood",
+                                "residual_impact",
+                                "review_date",
+                                "updated_at",
+                            )
+                        )
+                        selected_review.assessment = assessment
+                        selected_review.reviewed_by = request.user
+                        selected_review.reviewed_at = timezone.now()
+                        selected_review.save(
+                            update_fields=(
+                                "assessment",
+                                "reviewed_by",
+                                "reviewed_at",
+                            )
+                        )
+                    return redirect(
+                        f"/management/?organization={organization.pk}"
+                        f"&transition={selected_review.transition_id}"
+                    )
+
+    if selected_review and not selected_review.is_complete and assessment_form is None:
+        assessment_form = ManagementRiskAssessmentForm(
+            initial={
+                "likelihood": selected_review.risk.likelihood,
+                "impact": selected_review.risk.impact,
+                "residual_likelihood": selected_review.risk.residual_likelihood,
+                "residual_impact": selected_review.risk.residual_impact,
+            }
+        )
+
+    return render(
+        request,
+        "management.html",
+        {
+            "organizations": organizations,
+            "organization": organization,
+            "transitions": transitions,
+            "selected": selected,
+            "reviews": reviews,
+            "selected_review": selected_review,
+            "transition_form": transition_form,
+            "assessment_form": assessment_form,
+            "can_manage": can_manage,
+            "can_assess": can_assess,
+        },
+    )
 
 
 @login_required
@@ -446,6 +737,206 @@ def api_risk_summary(request):
 
 def api_health(request):
     return JsonResponse({"status": "ok", "service": "CGS Risk API", "version": "v1"})
+
+
+def _bot_api_organization(request):
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer ") or not auth_header[7:].strip():
+        return None, JsonResponse({"error": "A valid bearer token is required."}, status=401)
+    token_hash = hashlib.sha256(auth_header[7:].strip().encode()).hexdigest()
+    credential = ApiCredential.objects.select_related("organization").filter(
+        token_hash=token_hash, active=True
+    ).first()
+    if not credential or (
+        credential.expires_at and credential.expires_at <= timezone.now()
+    ):
+        return None, JsonResponse({"error": "Invalid or expired API credential."}, status=401)
+    credential.last_used_at = timezone.now()
+    credential.save(update_fields=["last_used_at"])
+    return credential.organization, None
+
+
+@csrf_exempt
+def api_bot_policy(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed."}, status=405)
+    organization, error = _bot_api_organization(request)
+    if error:
+        return error
+    policy, _ = RiskBotPolicy.objects.get_or_create(organization=organization)
+    return JsonResponse(
+        {
+            "organization": {"id": organization.pk, "name": organization.name},
+            "enabled": policy.enabled,
+            "currency": policy.currency,
+            "timezone": policy.timezone,
+            "rules": {
+                "max_single_transaction": str(policy.max_single_transaction),
+                "max_daily_payer_total": str(policy.max_daily_payer_total),
+                "max_daily_payer_transactions": policy.max_daily_payer_transactions,
+            },
+            "linked_risk": (
+                {
+                    "reference": policy.linked_risk.reference,
+                    "title": policy.linked_risk.title,
+                }
+                if policy.linked_risk_id
+                else None
+            ),
+        }
+    )
+
+
+@csrf_exempt
+def api_bot_transactions(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "Method not allowed."}, status=405)
+    organization, error = _bot_api_organization(request)
+    if error:
+        return error
+    content_length = request.META.get("CONTENT_LENGTH")
+    try:
+        body_size = int(content_length or 0)
+    except ValueError:
+        return JsonResponse({"error": "Invalid Content-Length header."}, status=400)
+    if body_size < 0:
+        return JsonResponse({"error": "Invalid Content-Length header."}, status=400)
+    if body_size > 65536:
+        return JsonResponse({"error": "Request body exceeds 64 KB."}, status=413)
+    payload = request.body
+    try:
+        import json
+
+        data = json.loads(payload)
+    except (ValueError, UnicodeDecodeError):
+        return JsonResponse({"error": "Request body must be valid JSON."}, status=400)
+    if not isinstance(data, dict):
+        return JsonResponse({"error": "Request body must be a JSON object."}, status=400)
+
+    policy, _ = RiskBotPolicy.objects.get_or_create(organization=organization)
+    receipt = data.get("receipt_number") or data.get("TransID")
+    if not isinstance(receipt, str) or not receipt.strip() or len(receipt.strip()) > 100:
+        return JsonResponse({"error": "A valid receipt_number is required."}, status=400)
+    amount_value = data.get("amount", data.get("TransAmount"))
+    try:
+        amount = Decimal(str(amount_value))
+        if not amount.is_finite() or amount < 0 or amount.as_tuple().exponent < -2:
+            raise InvalidOperation
+    except (InvalidOperation, TypeError, ValueError):
+        return JsonResponse({"error": "amount must be a non-negative number with at most 2 decimal places."}, status=400)
+    if amount > Decimal("999999999999.99"):
+        return JsonResponse({"error": "amount exceeds the supported range."}, status=400)
+    currency = data.get("currency", policy.currency)
+    if not isinstance(currency, str) or not re.fullmatch(r"[A-Za-z]{3}", currency):
+        return JsonResponse({"error": "currency must be a three-letter code."}, status=400)
+    currency = currency.upper()
+    if currency != policy.currency:
+        return JsonResponse(
+            {"error": f"This organization is configured for {policy.currency} transactions."},
+            status=400,
+        )
+    payer_phone = data.get("payer_phone", data.get("MSISDN", ""))
+    if payer_phone is None:
+        payer_phone = ""
+    if not isinstance(payer_phone, str) or len(payer_phone) > 32:
+        return JsonResponse({"error": "payer_phone must be a string of at most 32 characters."}, status=400)
+    transaction_time_value = data.get("transaction_time") or data.get("TransTime")
+    if not isinstance(transaction_time_value, str):
+        return JsonResponse({"error": "transaction_time is required."}, status=400)
+    try:
+        if re.fullmatch(r"\d{14}", transaction_time_value):
+            transaction_time = datetime.strptime(
+                transaction_time_value, "%Y%m%d%H%M%S"
+            ).replace(tzinfo=ZoneInfo(policy.timezone))
+        else:
+            transaction_time = parse_datetime(transaction_time_value)
+            if transaction_time is None or timezone.is_naive(transaction_time):
+                raise ValueError
+    except (ValueError, OverflowError):
+        return JsonResponse(
+            {"error": "transaction_time must be ISO 8601 with a timezone, or a Daraja YYYYMMDDHHMMSS timestamp."},
+            status=400,
+        )
+    account_reference = data.get("account_reference", data.get("BillRefNumber", ""))
+    if account_reference is None:
+        account_reference = ""
+    if not isinstance(account_reference, str) or len(account_reference) > 160:
+        return JsonResponse({"error": "account_reference must be a string of at most 160 characters."}, status=400)
+    source = data.get("source", "mpesa")
+    if not isinstance(source, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,40}", source):
+        return JsonResponse({"error": "source contains invalid characters."}, status=400)
+
+    transaction_record, created = RiskBotTransaction.objects.get_or_create(
+        organization=organization,
+        receipt_number=receipt.strip(),
+        defaults={
+            "amount": amount,
+            "currency": currency,
+            "payer_phone": payer_phone.strip(),
+            "transaction_time": transaction_time,
+            "account_reference": account_reference.strip(),
+            "source": source.lower(),
+        },
+    )
+    alerts = evaluate_bot_transaction(policy, transaction_record) if created else []
+    return JsonResponse(
+        {
+            "accepted": True,
+            "duplicate": not created,
+            "transaction_id": transaction_record.pk,
+            "alerts_created": len(alerts),
+            "alerts": [
+                {"id": alert.pk, "rule": alert.rule_code, "severity": alert.severity}
+                for alert in alerts
+            ],
+        },
+        status=201 if created else 200,
+    )
+
+
+@csrf_exempt
+def api_bot_alerts(request):
+    if request.method != "GET":
+        return JsonResponse({"error": "Method not allowed."}, status=405)
+    organization, error = _bot_api_organization(request)
+    if error:
+        return error
+    alerts = RiskBotAlert.objects.filter(organization=organization).select_related(
+        "risk", "transaction"
+    )
+    status_filter = request.GET.get("status")
+    if status_filter:
+        if status_filter not in RiskBotAlert.Status.values:
+            return JsonResponse({"error": "Invalid alert status."}, status=400)
+        alerts = alerts.filter(status=status_filter)
+    try:
+        limit = min(max(int(request.GET.get("limit", "50")), 1), 100)
+    except ValueError:
+        return JsonResponse({"error": "limit must be an integer."}, status=400)
+    return JsonResponse(
+        {
+            "alerts": [
+                {
+                    "id": alert.pk,
+                    "rule": alert.rule_code,
+                    "severity": alert.severity,
+                    "status": alert.status,
+                    "message": alert.message,
+                    "evidence": alert.evidence,
+                    "risk": (
+                        {"reference": alert.risk.reference, "title": alert.risk.title}
+                        if alert.risk_id
+                        else None
+                    ),
+                    "receipt_number": (
+                        alert.transaction.receipt_number if alert.transaction_id else None
+                    ),
+                    "created_at": alert.created_at.isoformat(),
+                }
+                for alert in alerts[:limit]
+            ]
+        }
+    )
 
 
 @login_required

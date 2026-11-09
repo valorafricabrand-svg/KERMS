@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>{% block title %}Risk Intelligence{% endblock %}</title>
+  <title>{% block title %}Kenya Enterprise Risk Management{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="/static/css/app.css">
@@ -10,16 +10,18 @@
 <body>
   <button class="mobile-menu" type="button" aria-label="Open navigation">☰</button>
   <aside class="sidebar" id="primary-navigation">
-    <a class="brand" href="/"><span class="brand-mark">CGS</span><span><strong>CGS Risk</strong><small>Enterprise intelligence</small></span></a>
+    <a class="brand" href="/"><span class="brand-mark">KE</span><span><strong>Kenya ERM</strong><small>Enterprise resilience</small></span></a>
     <nav aria-label="Primary navigation">
       <a href="/" class="{% if request.path == '/' %}active{% endif %}"><span class="nav-icon">▦</span><span>Overview</span></a>
       <a href="/risks/" class="{% if '/risks/' in request.path %}active{% endif %}"><span class="nav-icon">◫</span><span>Risk register</span></a>
       <a href="/assets/" class="{% if '/assets/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Assets & dependencies</span></a>
       <a href="/scenarios/" class="{% if '/scenarios/' in request.path %}active{% endif %}"><span class="nav-icon">⟳</span><span>Scenarios & stress tests</span></a>
+      <a href="/management/" class="{% if '/management/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Leadership handovers</span></a>
       <a href="/assurance/" class="{% if '/assurance/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Controls & assurance</span></a>
       <a href="/incidents/" class="{% if '/incidents/' in request.path %}active{% endif %}"><span class="nav-icon">!</span><span>Incidents & losses</span></a>
       <a href="/governance/" class="{% if '/governance/' in request.path %}active{% endif %}"><span class="nav-icon">§</span><span>Governance & compliance</span></a>
       <a href="/intelligence/" class="{% if '/intelligence/' in request.path %}active{% endif %}"><span class="nav-icon">⌁</span><span>Risk intelligence</span></a>
+      <a href="/risk-bot/" class="{% if '/risk-bot/' in request.path %}active{% endif %}"><span class="nav-icon">◉</span><span>Risk monitoring bot</span></a>
       <a href="/reports/" class="{% if '/reports/' in request.path %}active{% endif %}"><span class="nav-icon">▤</span><span>Reporting</span></a>
       <a href="/integrations/" class="{% if '/integrations/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Integrations & API</span></a>
       <a href="/admin/"><span class="nav-icon">⚙</span><span>Administration</span></a>

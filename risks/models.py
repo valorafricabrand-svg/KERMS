@@ -186,6 +186,13 @@ class RiskTreatment(models.Model):
 class RiskAssessment(models.Model):
     risk = models.ForeignKey(Risk, on_delete=models.CASCADE, related_name="assessments")
     assessor = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, blank=True)
+    management_transition = models.ForeignKey(
+        "ManagementTransition",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="risk_assessments",
+    )
     likelihood = models.PositiveSmallIntegerField()
     impact = models.PositiveSmallIntegerField()
     residual_likelihood = models.PositiveSmallIntegerField()
@@ -193,6 +200,58 @@ class RiskAssessment(models.Model):
     rationale = models.TextField(blank=True)
     assessed_at = models.DateTimeField(auto_now_add=True)
     class Meta: ordering = ("-assessed_at",)
+
+
+class ManagementTransition(models.Model):
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="management_transitions"
+    )
+    role = models.CharField(max_length=120)
+    outgoing_manager = models.CharField(max_length=160, blank=True)
+    incoming_manager = models.CharField(max_length=160, blank=True)
+    effective_date = models.DateField()
+    context = models.TextField(blank=True)
+    recorded_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-effective_date", "-created_at")
+
+    def __str__(self):
+        return f"{self.role} handover - {self.organization.name}"
+
+
+class ManagementTransitionRiskReview(models.Model):
+    transition = models.ForeignKey(
+        ManagementTransition, on_delete=models.CASCADE, related_name="reviews"
+    )
+    risk = models.ForeignKey(Risk, on_delete=models.CASCADE, related_name="handover_reviews")
+    assessment = models.ForeignKey(
+        RiskAssessment,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="management_reviews",
+    )
+    reviewed_by = models.ForeignKey(
+        "auth.User", on_delete=models.SET_NULL, null=True, blank=True
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ("assessment", "risk__reference")
+        constraints = [
+            models.UniqueConstraint(
+                fields=("transition", "risk"),
+                name="unique_risk_review_per_management_transition",
+            )
+        ]
+
+    @property
+    def is_complete(self):
+        return self.assessment_id is not None
 
 
 class ReportTemplate(models.Model):
@@ -409,11 +468,15 @@ class ExternalRiskAlert(models.Model):
 class StressScenario(models.Model):
     class ScenarioType(models.TextChoices):
         FLOODING = "flooding", "Flooding"
+        CLIMATE = "climate", "Climate or water stress"
         SANCTIONS = "sanctions", "Sanctions"
         CURRENCY = "currency", "Currency movement"
         POLITICAL = "political", "Political disruption"
         CYBER = "cyber", "Cyber outage"
         SUPPLIER = "supplier", "Supplier failure"
+        MARKET = "market", "Market or input-price shock"
+        PAYMENT = "payment", "Payment or connectivity outage"
+        PEOPLE = "people", "Key-person or succession change"
         CUSTOM = "custom", "Custom scenario"
 
     class Status(models.TextChoices):
@@ -691,6 +754,118 @@ class IntegrationEvent(models.Model):
 
     def __str__(self):
         return f"{self.event_type} - {self.status}"
+
+
+class RiskBotPolicy(models.Model):
+    organization = models.OneToOneField(
+        Organization, on_delete=models.CASCADE, related_name="risk_bot_policy"
+    )
+    enabled = models.BooleanField(default=True)
+    currency = models.CharField(max_length=3, default="KES")
+    timezone = models.CharField(max_length=64, default="Africa/Nairobi")
+    max_single_transaction = models.DecimalField(
+        max_digits=14, decimal_places=2, default=100000
+    )
+    max_daily_payer_total = models.DecimalField(
+        max_digits=14, decimal_places=2, default=250000
+    )
+    max_daily_payer_transactions = models.PositiveIntegerField(default=20)
+    linked_risk = models.ForeignKey(
+        Risk, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="bot_policies",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def clean(self):
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+        from django.core.exceptions import ValidationError
+
+        if self.linked_risk_id and self.linked_risk.organization_id != self.organization_id:
+            raise ValidationError({"linked_risk": "The linked risk must belong to this organization."})
+        try:
+            ZoneInfo(self.timezone)
+        except ZoneInfoNotFoundError as exc:
+            raise ValidationError({"timezone": "Enter a valid IANA timezone."}) from exc
+
+    def __str__(self):
+        return f"Risk bot policy - {self.organization}"
+
+
+class RiskBotTransaction(models.Model):
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="bot_transactions"
+    )
+    receipt_number = models.CharField(max_length=100)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    currency = models.CharField(max_length=3, default="KES")
+    payer_phone = models.CharField(max_length=32, blank=True)
+    transaction_time = models.DateTimeField()
+    account_reference = models.CharField(max_length=160, blank=True)
+    source = models.CharField(max_length=40, default="mpesa")
+    received_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-transaction_time",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "receipt_number"),
+                name="unique_bot_receipt_per_organization",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(amount__gte=0), name="bot_transaction_amount_nonnegative"
+            ),
+        ]
+        indexes = [
+            models.Index(fields=("organization", "transaction_time")),
+            models.Index(fields=("organization", "payer_phone", "transaction_time")),
+        ]
+
+    def __str__(self):
+        return f"{self.receipt_number} - {self.amount} {self.currency}"
+
+
+class RiskBotAlert(models.Model):
+    class Status(models.TextChoices):
+        NEW = "new", "New"
+        ACKNOWLEDGED = "acknowledged", "Acknowledged"
+        RESOLVED = "resolved", "Resolved"
+        DISMISSED = "dismissed", "Dismissed"
+
+    class Severity(models.TextChoices):
+        MEDIUM = "medium", "Medium"
+        HIGH = "high", "High"
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="bot_alerts"
+    )
+    transaction = models.ForeignKey(
+        RiskBotTransaction, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="alerts",
+    )
+    risk = models.ForeignKey(
+        Risk, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="bot_alerts",
+    )
+    event_key = models.CharField(max_length=160)
+    rule_code = models.CharField(max_length=48)
+    severity = models.CharField(max_length=12, choices=Severity.choices)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.NEW)
+    message = models.CharField(max_length=500)
+    evidence = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        constraints = [
+            models.UniqueConstraint(
+                fields=("organization", "event_key"),
+                name="unique_bot_alert_event_per_organization",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.rule_code} - {self.organization}"
 
 
 class WebhookEndpoint(models.Model):

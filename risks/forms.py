@@ -1,5 +1,5 @@
 from django import forms
-from .models import Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint
+from .models import Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition
 
 
 class RiskForm(forms.ModelForm):
@@ -173,3 +173,58 @@ class WebhookEndpointForm(forms.ModelForm):
     class Meta:
         model = WebhookEndpoint
         fields = ("name", "target_url", "event_types", "active")
+
+
+class ManagementTransitionForm(forms.ModelForm):
+    class Meta:
+        model = ManagementTransition
+        fields = (
+            "role",
+            "outgoing_manager",
+            "incoming_manager",
+            "effective_date",
+            "context",
+        )
+        widgets = {
+            "effective_date": forms.DateInput(attrs={"type": "date"}),
+            "context": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "Handover context, key changes, or decisions to revisit",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+
+
+class ManagementRiskAssessmentForm(forms.Form):
+    likelihood = forms.IntegerField(min_value=1, max_value=5)
+    impact = forms.IntegerField(min_value=1, max_value=5)
+    residual_likelihood = forms.IntegerField(min_value=1, max_value=5)
+    residual_impact = forms.IntegerField(min_value=1, max_value=5)
+    rationale = forms.CharField(
+        required=True,
+        widget=forms.Textarea(
+            attrs={
+                "rows": 3,
+                "placeholder": "What changed, what evidence was reviewed, and why?",
+            }
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        rating_choices = [(value, str(value)) for value in range(1, 6)]
+        for name in (
+            "likelihood",
+            "impact",
+            "residual_likelihood",
+            "residual_impact",
+        ):
+            self.fields[name].widget = forms.Select(choices=rating_choices)
+            self.fields[name].widget.attrs["class"] = "form-control"
+        self.fields["rationale"].widget.attrs["class"] = "form-control"

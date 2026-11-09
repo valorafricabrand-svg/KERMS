@@ -1,4 +1,14 @@
-# Python temporary files
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Python environments and generated files
+.venv/
+venv/
+env/
 __pycache__/
 *.py[cod]
 *.pyd
@@ -6,31 +16,23 @@ __pycache__/
 .coverage
 htmlcov/
 
-# Python virtual environments
-.venv/
-venv/
-env/
-
-# Django temporary and local files
-*.log
+# Local databases, runtime data, and backups
 db.sqlite3
 db.sqlite3-journal
+*.sqlite3
+*.sqlite3-journal
+data/
+backups/
+.postgres_data/
+postgres_data/
 staticfiles/
 media/
-
-# Passwords, secret keys and local settings
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-
-# Confidential source data and generated outputs
-data/
 uploads/
 exports/
-backups/
 reports/generated/
+*.log
+
+# Generated business documents and local data exports
 *.xlsx
 *.xls
 *.csv
@@ -38,12 +40,10 @@ reports/generated/
 *.pdf
 *.zip
 
-# VS Code, other editors and Windows
+# Tools and operating systems
 .vscode/
 .idea/
 Thumbs.db
 desktop.ini
 .DS_Store
-
-# Front-end dependencies, if introduced later
 node_modules/

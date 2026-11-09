@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Leadership Handovers · Kenya ERM{% endblock %}
+{% block heading %}Leadership handovers{% endblock %}
+{% block content %}
+<form class="org-filter" method="get">
+  <label>Organization
+    <select name="organization" onchange="this.form.submit()">
+      {% for org in organizations %}<option value="{{ org.pk }}" {% if org == organization %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+
+<section class="card">
+  <div class="card-head">
+    <div><span class="eyebrow">Continuity and accountability</span><h2>Review risk when leadership changes</h2></div>
+  </div>
+  <p>Record a handover to preserve context beyond individual managers. Every open risk is added to a review queue; a reviewer records the new assessment and rationale, while earlier assessments remain in the history.</p>
+  <p>Do not enter passwords, account recovery codes, or other credentials in handover notes.</p>
+</section>
+
+{% if can_manage %}
+<section class="card">
+  <div class="card-head"><div><span class="eyebrow">Start a handover</span><h2>Record management change</h2></div></div>
+  {% if organization %}
+  <form method="post" action="/management/?organization={{ organization.pk }}" class="form-card">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_transition">
+    <div class="form-grid">
+      <div>{{ transition_form.role.label_tag }}{{ transition_form.role }}{{ transition_form.role.errors }}</div>
+      <div>{{ transition_form.effective_date.label_tag }}{{ transition_form.effective_date }}{{ transition_form.effective_date.errors }}</div>
+      <div>{{ transition_form.outgoing_manager.label_tag }}{{ transition_form.outgoing_manager }}{{ transition_form.outgoing_manager.errors }}</div>
+      <div>{{ transition_form.incoming_manager.label_tag }}{{ transition_form.incoming_manager }}{{ transition_form.incoming_manager.errors }}</div>
+    </div>
+    <div>{{ transition_form.context.label_tag }}{{ transition_form.context }}{{ transition_form.context.errors }}</div>
+    <div class="form-actions"><button class="button" type="submit">Record handover and queue open risks</button></div>
+  </form>
+  {% else %}<p>Create or join an organization before recording a handover.</p>{% endif %}
+</section>
+{% elif organization %}
+<section class="card"><p>Your organization role is read-only for handover creation. Ask an administrator or risk manager to record the transition.</p></section>
+{% endif %}
+
+<div class="grid-2">
+  <section class="card">
+    <div class="card-head"><div><span class="eyebrow">Management history</span><h2>Recorded handovers</h2></div></div>
+    {% if transitions %}
+    <div class="scenario-list">
+      {% for transition in transitions %}
+      <a class="scenario-row {% if transition == selected %}selected{% endif %}" href="/management/?organization={{ organization.pk }}&amp;transition={{ transition.pk }}">
+        <div><strong>{{ transition.role }}</strong><span>{{ transition.effective_date|date:"d M Y" }} · {{ transition.outgoing_manager|default:"Previous manager not named" }} → {{ transition.incoming_manager|default:"Successor not named" }}</span></div>
+        <span class="badge {% if transition.completed_count == transition.review_count %}low{% else %}high{% endif %}">{{ transition.completed_count }}/{{ transition.review_count }} reviewed</span>
+      </a>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state"><div class="empty-icon">⇄</div><h2>No handovers recorded</h2><p>A handover will be retained here with its risk-review history.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <div class="card-head"><div><span class="eyebrow">Risk continuity review</span><h2>{% if selected %}{{ selected.role }}{% else %}Select a handover{% endif %}</h2></div></div>
+    {% if selected %}
+      <p>Effective {{ selected.effective_date|date:"d M Y" }}. {{ selected.context|default:"No additional handover context recorded." }}</p>
+      {% if selected.review_count == 0 %}
+      <div class="empty-state compact"><p>No open risks existed when this handover was recorded.</p></div>
+      {% else %}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Risk</th><th>Residual score</th><th>Review status</th></tr></thead>
+          <tbody>
+            {% for review in reviews %}
+            <tr>
+              <td><a href="/risks/{{ review.risk.pk }}/">{{ review.risk.reference }} · {{ review.risk.title }}</a></td>
+              <td>{{ review.risk.residual_score }}</td>
+              <td>
+                {% if review.is_complete %}
+                  <span class="badge low">Reviewed {{ review.reviewed_at|date:"d M Y" }}</span>
+                {% else %}
+                  <a class="button secondary" href="/management/?organization={{ organization.pk }}&amp;transition={{ selected.pk }}&amp;review={{ review.pk }}#review-form">Review</a>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    {% else %}
+      <div class="empty-state compact"><p>Record a transition or choose one from the history to see its reviews.</p></div>
+    {% endif %}
+  </section>
+</div>
+
+{% if selected_review %}
+<section class="card" id="review-form">
+  <div class="card-head"><div><span class="eyebrow">Management-change reassessment</span><h2>{{ selected_review.risk.reference }} · {{ selected_review.risk.title }}</h2></div></div>
+  {% if selected_review.is_complete %}
+    <p>This risk was reviewed by {{ selected_review.reviewed_by|default:"a former member" }} on {{ selected_review.reviewed_at|date:"d M Y" }}.</p>
+    <p><strong>Assessment rationale:</strong> {{ selected_review.assessment.rationale }}</p>
+  {% elif can_assess %}
+    <p>Reassess likelihood and impact using current evidence. The new assessment will be saved alongside the previous history.</p>
+    <form method="post" action="/management/?organization={{ organization.pk }}&amp;transition={{ selected.pk }}&amp;review={{ selected_review.pk }}#review-form" class="form-card">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="complete_review">
+      <input type="hidden" name="transition" value="{{ selected.pk }}">
+      <input type="hidden" name="review" value="{{ selected_review.pk }}">
+      {% if assessment_form.non_field_errors %}<div class="form-errors" role="alert">{{ assessment_form.non_field_errors }}</div>{% endif %}
+      <div class="form-grid">
+        <div>{{ assessment_form.likelihood.label_tag }}{{ assessment_form.likelihood }}{{ assessment_form.likelihood.errors }}</div>
+        <div>{{ assessment_form.impact.label_tag }}{{ assessment_form.impact }}{{ assessment_form.impact.errors }}</div>
+        <div>{{ assessment_form.residual_likelihood.label_tag }}{{ assessment_form.residual_likelihood }}{{ assessment_form.residual_likelihood.errors }}</div>
+        <div>{{ assessment_form.residual_impact.label_tag }}{{ assessment_form.residual_impact }}{{ assessment_form.residual_impact.errors }}</div>
+      </div>
+      <div>{{ assessment_form.rationale.label_tag }}{{ assessment_form.rationale }}{{ assessment_form.rationale.errors }}</div>
+      <div class="form-actions"><button class="button" type="submit">Save reassessment</button></div>
+    </form>
+  {% else %}
+    <p>This review is pending. An analyst, risk manager, or administrator can complete the reassessment.</p>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

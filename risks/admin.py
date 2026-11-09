@@ -5,10 +5,12 @@ from .models import (
     OrganizationMembership, Risk, RiskAppetite, RiskAssessment, RiskCategory,
     RiskControl, RiskTheme, RiskTreatment, StrategicObjective,
     ReportTemplate, Report, ReportSchedule, AssuranceTest,
+    ManagementTransition, ManagementTransitionRiskReview,
     ExternalRiskSource, ExternalRiskAlert, Asset, Portfolio,
     BusinessUnit, LegalEntity, Supplier, AssetDependency, StressScenario, ScenarioImpact, LossIncident,
     ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy,
     IntegrationConnection, ApiCredential, IntegrationEvent, WebhookEndpoint,
+    RiskBotPolicy, RiskBotTransaction, RiskBotAlert,
 )
 
 
@@ -84,6 +86,8 @@ class RiskAdmin(admin.ModelAdmin):
 admin.site.register(RiskControl)
 admin.site.register(RiskTreatment)
 admin.site.register(RiskAssessment)
+admin.site.register(ManagementTransition)
+admin.site.register(ManagementTransitionRiskReview)
 admin.site.register(OrganizationMembership)
 admin.site.register(ReportTemplate)
 admin.site.register(Report)
@@ -109,3 +113,49 @@ admin.site.register(IntegrationConnection)
 admin.site.register(ApiCredential)
 admin.site.register(IntegrationEvent)
 admin.site.register(WebhookEndpoint)
+
+
+@admin.register(RiskBotPolicy)
+class RiskBotPolicyAdmin(admin.ModelAdmin):
+    list_display = (
+        "organization",
+        "enabled",
+        "currency",
+        "timezone",
+        "max_single_transaction",
+        "max_daily_payer_total",
+        "max_daily_payer_transactions",
+    )
+    list_filter = ("enabled", "currency")
+    search_fields = ("organization__name", "organization__code")
+
+
+@admin.register(RiskBotTransaction)
+class RiskBotTransactionAdmin(admin.ModelAdmin):
+    list_display = (
+        "organization",
+        "receipt_number",
+        "amount",
+        "currency",
+        "payer_phone",
+        "transaction_time",
+        "source",
+    )
+    list_filter = ("organization", "currency", "source")
+    search_fields = ("receipt_number", "payer_phone", "account_reference")
+    readonly_fields = ("received_at",)
+
+
+@admin.register(RiskBotAlert)
+class RiskBotAlertAdmin(admin.ModelAdmin):
+    list_display = (
+        "organization",
+        "rule_code",
+        "severity",
+        "status",
+        "risk",
+        "created_at",
+    )
+    list_filter = ("organization", "severity", "status", "rule_code")
+    search_fields = ("message", "event_key", "risk__reference", "risk__title")
+    readonly_fields = ("created_at", "updated_at")
