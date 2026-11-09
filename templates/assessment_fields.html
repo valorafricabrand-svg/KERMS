@@ -1,0 +1,38 @@
+<div class="assessment-fields">
+  <div class="assessment-meta-field">
+    <label for="{{ form.assessment_date.id_for_label }}">{{ form.assessment_date.label }}</label>
+    {{ form.assessment_date }}
+    {{ form.assessment_date.errors }}
+  </div>
+  {% for section in assessment_sections %}
+  <section class="assessment-section">
+    <div class="assessment-section-heading">
+      <span>{{ forloop.counter }}</span>
+      <div><h2>{{ section.title }}</h2><p>{{ section.description }}</p></div>
+    </div>
+    <div class="assessment-question-list">
+      {% for question in section.questions %}
+      <fieldset class="assessment-question">
+        <legend>{{ question.label }}</legend>
+        {{ question.field }}
+        {{ question.field.errors }}
+      </fieldset>
+      {% endfor %}
+    </div>
+  </section>
+  {% endfor %}
+  <div class="assessment-notes-grid">
+    <div class="assessment-meta-field">
+      <label for="{{ form.business_context.id_for_label }}">{{ form.business_context.label }}</label>
+      {{ form.business_context }}
+      {{ form.business_context.errors }}
+      <small>Optional context for this assessment. Avoid adding sensitive personal information.</small>
+    </div>
+    <div class="assessment-meta-field">
+      <label for="{{ form.priority_actions.id_for_label }}">{{ form.priority_actions.label }}</label>
+      {{ form.priority_actions }}
+      {{ form.priority_actions.errors }}
+      <small>Capture practical next steps. Risks are recorded separately in the risk register.</small>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Entrepreneur assessments | Kenya ERM{% endblock %}
+{% block eyebrow %}Business assessment{% endblock %}
+{% block heading %}Assessment registry{% endblock %}
+{% block actions %}{% if organization and can_edit %}<a class="button" href="{% url 'entrepreneur_assessment_create' %}?organization={{ organization.pk }}">+ Start assessment</a>{% endif %}{% endblock %}
+{% block content %}
+<div class="assessment-page">
+  {% if organization %}
+  <section class="assessment-registry-intro">
+    <div><span class="eyebrow">Separate, repeatable records</span><h2>{{ organization.name }}</h2><p>Each assessment is saved with its own answers and review history. Agreed risks can be linked to the risk register without turning the assessment into a risk score.</p></div>
+    {% if organizations|length > 1 %}
+    <form method="get" class="assessment-org-filter">
+      <label for="assessment-organization">Business</label>
+      <select id="assessment-organization" name="organization" onchange="this.form.submit()">
+        {% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
+  </section>
+  <section class="assessment-registry">
+    <div class="assessment-registry-head"><div><span class="eyebrow">Assessment history</span><h2>{{ assessments|length }} record{{ assessments|length|pluralize }}</h2></div></div>
+    {% if assessments %}
+    <div class="assessment-record-list">
+      {% for assessment in assessments %}
+      <article class="assessment-record">
+        <div class="assessment-record-date"><strong>{{ assessment.assessment_date|date:"j" }}</strong><span>{{ assessment.assessment_date|date:"M Y" }}</span></div>
+        <div class="assessment-record-main">
+          <a href="{% url 'entrepreneur_assessment_detail' assessment.pk %}"><strong>Business assessment #{{ assessment.pk }}</strong></a>
+          <span>{{ assessment.answered_count }} of {{ assessment.question_count }} topics answered{% if assessment.created_by %} · Started by {{ assessment.created_by.get_full_name|default:assessment.created_by.username }}{% endif %}</span>
+          {% if assessment.priority_actions %}<small>Next step: {{ assessment.priority_actions|truncatechars:130 }}</small>{% endif %}
+        </div>
+        <span class="badge {{ assessment.status }}">{{ assessment.get_status_display }}</span>
+        {% if assessment.status == "draft" and can_edit %}<a class="assessment-record-action" href="{% url 'entrepreneur_assessment_detail' assessment.pk %}">Continue →</a>{% else %}<a class="assessment-record-action" href="{% url 'entrepreneur_assessment_detail' assessment.pk %}">Open →</a>{% endif %}
+      </article>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="assessment-empty"><span aria-hidden="true">✓</span><h3>No assessments yet</h3><p>Create a first assessment when the business is ready. Save a draft if you need to gather more information.</p>{% if can_edit %}<a class="button" href="{% url 'entrepreneur_assessment_create' %}?organization={{ organization.pk }}">Start an assessment</a>{% endif %}</div>
+    {% endif %}
+  </section>
+  {% else %}
+  <section class="assessment-empty"><h2>No business workspace yet</h2><p>Ask an administrator to connect your account to a business workspace before starting an assessment.</p></section>
+  {% endif %}
+</div>
+{% endblock %}

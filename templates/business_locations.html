@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Business locations | Kenya Enterprise Risk Management{% endblock %}
+{% block eyebrow %}Your business{% endblock %}
+{% block heading %}Business locations{% endblock %}
+{% block actions %}
+{% if can_edit %}<a class="button" href="#location-editor">+ Add a site</a>{% endif %}
+{% endblock %}
+{% block content %}
+<div class="location-page">
+  {% if organization %}
+  <section class="location-intro">
+    <div>
+      <span class="eyebrow">Map your operations</span>
+      <h2>Where does your business work?</h2>
+      <p>Add shops, farms, workshops, offices, markets, or other sites. Pin each site and record the local conditions you have observed so you can connect them to practical business risks.</p>
+    </div>
+    {% if organizations|length > 1 %}
+    <form class="location-org-filter" method="get">
+      <label for="location-organization">Business workspace</label>
+      <select id="location-organization" name="organization" onchange="this.form.submit()">
+        {% for item in organizations %}<option value="{{ item.pk }}" {% if item.pk == organization.pk %}selected{% endif %}>{{ item.name }}</option>{% endfor %}
+      </select>
+    </form>
+    {% endif %}
+  </section>
+
+  <p class="location-data-note"><strong>How location guidance works:</strong> The map only shows the pins you provide. It does not detect or verify flood, drought, heat, or other hazards. Exposure factors are your own observations and should be confirmed before adding them to the risk register. Public OpenStreetMap tiles are used to display the map.</p>
+  <section class="location-prompt-card">
+    <div><span class="eyebrow">Business-model prompts</span><h2>{% if business_profile %}Considerations for {{ business_profile.get_sector_display|lower }}{% else %}Considerations for your business{% endif %}</h2></div>
+    <p>These are conversation starters, not predictions or a complete list. Decide which apply to your business and location, then assess confirmed risks in the register.</p>
+    <ul>{% for prompt in site_risk_prompts %}<li>{{ prompt }}</li>{% endfor %}</ul>
+    {% if not business_profile %}<a href="/business-profile/?organization={{ organization.pk }}">Add your business model to tailor these prompts →</a>{% endif %}
+  </section>
+
+  <section class="location-map-card" aria-labelledby="location-map-title">
+    <div class="location-section-heading">
+      <div><span class="eyebrow">Site map</span><h2 id="location-map-title">Your business locations</h2></div>
+      <div class="location-map-actions"><span>{{ locations|length }} site{{ locations|length|pluralize }}</span><button type="button" data-map-fit-sites>Show all sites</button><button type="button" data-map-focus-kenya>Focus on Kenya</button></div>
+    </div>
+    <div id="business-sites-map" role="region" aria-label="Map of business locations"></div>
+    <p class="location-map-help">{% if can_edit %}Click the map to place or move the pin for the site form. Drag a marker to fine-tune its position.{% else %}Pins show the saved business sites in this workspace.{% endif %}</p>
+    <div class="location-map-markers" aria-hidden="true">
+      {% for location in locations %}
+        {% if location.latitude != None and location.longitude != None %}
+        <span data-site-marker data-site-id="{{ location.pk }}" data-name="{{ location.name }}" data-area="{{ location.region }}, {{ location.country }}" data-latitude="{{ location.latitude }}" data-longitude="{{ location.longitude }}"></span>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </section>
+
+  <div class="location-workspace">
+    <section class="location-sites" aria-labelledby="location-sites-title">
+      <div class="location-section-heading">
+        <div><span class="eyebrow">Sites and local context</span><h2 id="location-sites-title">Registered business sites</h2></div>
+      </div>
+      {% for location in locations %}
+      <article class="location-site-card">
+        <div class="location-site-title">
+          <div><h3>{{ location.name }}</h3><p>{{ location.get_site_type_display }} · {{ location.region|default:"Area not added" }}, {{ location.country }}</p></div>
+          <div class="location-site-actions">{% if location.latitude != None and location.longitude != None %}<button type="button" data-location-focus="{{ location.pk }}">Show on map</button>{% else %}<span>No pin yet</span>{% endif %}{% if can_edit %}<a href="?organization={{ organization.pk }}&edit={{ location.pk }}#location-editor">Edit site</a>{% endif %}</div>
+        </div>
+        {% if location.address %}<p class="location-site-address">{{ location.address }}</p>{% endif %}
+        {% if location.exposure_factors %}
+        <div class="location-exposures"><strong>Conditions to consider</strong><ul>{% for value, label in exposure_choices %}{% if value in location.exposure_factors %}<li>{{ label }}</li>{% endif %}{% endfor %}</ul></div>
+        {% else %}
+        <p class="location-no-exposures">No local exposure factors recorded. Review the site and add only what you know or observe.</p>
+        {% endif %}
+        {% if location.exposure_notes %}<p class="location-site-notes">{{ location.exposure_notes }}</p>{% endif %}
+        <div class="location-site-links">
+          <span>{{ location.risk_count }} linked risk{{ location.risk_count|pluralize }} · {{ location.asset_count }} linked asset{{ location.asset_count|pluralize }}</span>
+          {% if can_edit %}<a href="/risks/new/?organization={{ organization.pk }}&location={{ location.pk }}">Assess a risk for this site →</a>{% endif %}
+        </div>
+        {% if location.risk_count %}
+        <ul class="location-risk-list">
+          {% for risk in location.risks.all %}
+          <li><a href="/risks/{{ risk.pk }}/">{{ risk.reference }} · {{ risk.title }}</a><span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span></li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </article>
+      {% empty %}
+      <div class="location-empty">
+        <strong>No business sites have been mapped yet</strong>
+        <p>Add your first shop, farm, market, workshop, or other site. You can use an approximate pin if you prefer not to record an exact entrance.</p>
+      </div>
+      {% endfor %}
+    </section>
+
+    <section class="location-editor-card" id="location-editor" aria-labelledby="location-editor-title">
+      <div class="location-section-heading">
+        <div><span class="eyebrow">{% if editing_location %}Update site{% else %}Start with one place{% endif %}</span><h2 id="location-editor-title">{% if editing_location %}Edit business site{% else %}Add a business site{% endif %}</h2></div>
+      </div>
+      {% if can_edit %}
+      <p class="location-form-intro">The pin can be approximate. Only members of this business workspace can view its saved site details.</p>
+      <form method="post" class="location-form" novalidate>
+        {% csrf_token %}
+        <input type="hidden" name="organization" value="{{ organization.pk }}">
+        {% if editing_location %}<input type="hidden" name="location_id" value="{{ editing_location }}">{% endif %}
+        {% if location_form.non_field_errors %}<div class="location-errors" role="alert">{{ location_form.non_field_errors }}</div>{% endif %}
+        <div class="location-fields">
+          {% for field in location_form %}
+          {% if field.name != "exposure_factors" %}
+          <div class="location-field {% if field.name == 'exposure_notes' %}location-field-wide{% endif %}">
+            {{ field.label_tag }}{{ field }}
+            {% if field.help_text %}<small>{{ field.help_text }}</small>{% endif %}
+            {{ field.errors }}
+          </div>
+          {% endif %}
+          {% endfor %}
+        </div>
+        <fieldset class="location-exposure-field">
+          <legend>{{ location_form.exposure_factors.label }}</legend>
+          <p>{{ location_form.exposure_factors.help_text }}</p>
+          {{ location_form.exposure_factors }}
+          {{ location_form.exposure_factors.errors }}
+        </fieldset>
+        <div class="location-form-actions">
+          {% if editing_location %}<a class="button secondary" href="/locations/?organization={{ organization.pk }}">Cancel edit</a>{% endif %}
+          <button class="button" type="submit">{% if editing_location %}Save site changes{% else %}Save business site{% endif %}</button>
+        </div>
+      </form>
+      {% else %}
+      <p class="location-readonly">You have view-only access. Ask a workspace administrator or risk manager to add or update locations.</p>
+      {% endif %}
+    </section>
+  </div>
+  {% else %}
+  <section class="location-empty"><h2>No business workspace yet</h2><p>Ask an administrator to connect your account to a business workspace before mapping sites.</p></section>
+  {% endif %}
+</div>
+{% endblock %}
+{% block page_scripts %}
+<script src="{% static 'js/business-locations.js' %}?v=3"></script>
+{% endblock %}

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Assessment #{{ assessment.pk }} | Kenya ERM{% endblock %}
+{% block eyebrow %}{{ assessment.organization.name }} · Entrepreneur assessment{% endblock %}
+{% block heading %}Assessment #{{ assessment.pk }}{% endblock %}
+{% block actions %}<a class="button secondary" href="{% url 'entrepreneur_assessments' %}?organization={{ assessment.organization.pk }}">Back to registry</a>{% endblock %}
+{% block content %}
+<div class="assessment-page">
+  <section class="assessment-detail-summary">
+    <div><span class="eyebrow">Assessment record</span><h2>{{ assessment.assessment_date|date:"j F Y" }}</h2><p>{{ assessment.answered_count }} of {{ assessment.question_count }} topics answered{% if assessment.created_by %} · Started by {{ assessment.created_by.get_full_name|default:assessment.created_by.username }}{% endif %}</p></div>
+    <span class="badge {{ assessment.status }}">{{ assessment.get_status_display }}</span>
+  </section>
+
+  {% if assessment.business_context %}
+  <section class="assessment-detail-note"><strong>Business context</strong><p>{{ assessment.business_context }}</p></section>
+  {% endif %}
+
+  {% if form %}
+  <form method="post" class="assessment-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "assessment_fields.html" %}
+    <div class="assessment-actions">
+      <button class="button secondary" type="submit" name="action" value="save_draft">Save draft</button>
+      <button class="button" type="submit" name="action" value="submit">Submit for review</button>
+    </div>
+  </form>
+  {% else %}
+  {% for section in assessment_sections %}
+  <section class="assessment-answer-section">
+    <div class="assessment-section-heading"><span>{{ forloop.counter }}</span><div><h2>{{ section.title }}</h2><p>{{ section.description }}</p></div></div>
+    <dl class="assessment-answer-list">
+      {% for question in section.questions %}
+      <div><dt>{{ question.label }}</dt><dd class="{{ question.value|default:'not-answered' }}">{{ question.answer }}</dd></div>
+      {% endfor %}
+    </dl>
+  </section>
+  {% endfor %}
+  {% endif %}
+
+  {% if assessment.priority_actions %}
+  <section class="assessment-detail-note"><strong>Suggested next steps</strong><p>{{ assessment.priority_actions|linebreaksbr }}</p></section>
+  {% endif %}
+
+  {% if assessment.status == "submitted" and review_form and can_edit %}
+  <form method="post" class="assessment-review-form">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="review">
+    <span class="eyebrow">Reviewer follow-up</span>
+    <h2>Record the review</h2>
+    <p>Summarize what was agreed, then link any existing risks that belong in the separate risk register.</p>
+    <div class="assessment-meta-field"><label for="{{ review_form.review_notes.id_for_label }}">Review notes</label>{{ review_form.review_notes }}{{ review_form.review_notes.errors }}</div>
+    <fieldset class="assessment-risk-links"><legend>{{ review_form.risk_links.label }}</legend>{{ review_form.risk_links }}{{ review_form.risk_links.errors }}<small>{{ review_form.risk_links.help_text }}</small></fieldset>
+    <div class="assessment-actions"><button class="button" type="submit">Save review</button></div>
+  </form>
+  {% endif %}
+
+  {% if assessment.risks.all %}
+  <section class="assessment-linked-risks">
+    <span class="eyebrow">Linked risk-register items</span>
+    <ul>{% for risk in assessment.risks.all %}<li><a href="{% url 'risk_detail' risk.pk %}"><strong>{{ risk.reference }}</strong> · {{ risk.title }}</a></li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+
+  {% if assessment.review_notes %}
+  <section class="assessment-detail-note"><strong>Review notes{% if assessment.reviewed_by %} · {{ assessment.reviewed_by.get_full_name|default:assessment.reviewed_by.username }}{% endif %}</strong><p>{{ assessment.review_notes|linebreaksbr }}</p></section>
+  {% endif %}
+  <p class="assessment-disclaimer">Assessment answers are a structured conversation aid, not an automated business rating, credit decision, compliance certificate, or professional advice.</p>
+</div>
+{% endblock %}

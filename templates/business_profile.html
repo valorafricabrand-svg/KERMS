@@ -10,7 +10,7 @@
     <div>
       <span class="eyebrow">A useful starting point</span>
       <h2>Tell us how your business works</h2>
-      <p>Your answers help organize the risks that matter to your business. Share only what you are comfortable sharing; turnover is optional and collected as a broad range.</p>
+      <p>These details describe the business and help give each separate assessment useful context. Share only what you are comfortable sharing; turnover is optional and collected as a broad range.</p>
     </div>
     <div class="profile-intro-aside">
     {% if organizations|length > 1 %}
@@ -23,15 +23,12 @@
     {% endif %}
     <div class="profile-progress-group">
       <div class="profile-progress" aria-label="Profile completion">
-        <div><strong>{{ profile_completion }}%</strong><span>business basics</span></div>
+        <div><strong>{{ profile_completion }}%</strong><span>profile details</span></div>
         <div class="profile-progress-track"><span style="width:{{ profile_completion }}%"></span></div>
-        <small>Completeness, not a risk rating.</small>
+        <small>Profile completeness only; not a risk rating.</small>
       </div>
-      <div class="profile-progress" aria-label="Self-assessment completion">
-        <div><strong>{{ assessment_completion }}%</strong><span>preparedness questions</span></div>
-        <div class="profile-progress-track"><span style="width:{{ assessment_completion }}%"></span></div>
-        <small>Answered questions, not a score.</small>
-      </div>
+      <a class="button" href="/locations/?organization={{ organization.pk }}">Map business locations</a>
+      <a class="button secondary" href="/assessments/?organization={{ organization.pk }}">Open assessment registry</a>
     </div>
     </div>
   </div>
@@ -70,21 +67,7 @@
     </section>
 
     <section class="profile-section">
-      <div class="profile-section-heading"><span>3</span><div><h2>How prepared do you feel?</h2><p>There are no right or wrong answers. “Not sure” is a useful answer too.</p></div></div>
-      <div class="profile-question-grid">
-        <div class="profile-field"><label for="{{ form.keeps_financial_records.id_for_label }}">I keep basic records of money in and out</label>{{ form.keeps_financial_records }}{{ form.keeps_financial_records.errors }}</div>
-        <div class="profile-field"><label for="{{ form.separates_business_finances.id_for_label }}">I keep business and personal money separate</label>{{ form.separates_business_finances }}{{ form.separates_business_finances.errors }}</div>
-        <div class="profile-field"><label for="{{ form.permits_and_licences.id_for_label }}">I know which permits or licences my business needs</label>{{ form.permits_and_licences }}{{ form.permits_and_licences.errors }}</div>
-        <div class="profile-field"><label for="{{ form.has_supplier_alternatives.id_for_label }}">I have another option for important supplies</label>{{ form.has_supplier_alternatives }}{{ form.has_supplier_alternatives.errors }}</div>
-        <div class="profile-field"><label for="{{ form.backs_up_important_records.id_for_label }}">I can recover important business records if lost</label>{{ form.backs_up_important_records }}{{ form.backs_up_important_records.errors }}</div>
-        <div class="profile-field"><label for="{{ form.has_business_continuity_plan.id_for_label }}">I know what I would do if I had to close temporarily</label>{{ form.has_business_continuity_plan }}{{ form.has_business_continuity_plan.errors }}</div>
-        <div class="profile-field"><label for="{{ form.protects_digital_payments.id_for_label }}">I use safe practices for mobile or online payments</label>{{ form.protects_digital_payments }}{{ form.protects_digital_payments.errors }}</div>
-        <div class="profile-field"><label for="{{ form.has_relevant_insurance.id_for_label }}">I have considered insurance for key business losses</label>{{ form.has_relevant_insurance }}{{ form.has_relevant_insurance.errors }}</div>
-      </div>
-    </section>
-
-    <section class="profile-section">
-      <div class="profile-section-heading"><span>4</span><div><h2>What matters most to you?</h2><p>Tell us the main challenge you would like help thinking through.</p></div></div>
+      <div class="profile-section-heading"><span>3</span><div><h2>What matters most to you?</h2><p>Tell us the main challenge you would like help thinking through.</p></div></div>
       <div class="profile-field"><label for="{{ form.top_concerns.id_for_label }}">{{ form.top_concerns.label }}</label>{{ form.top_concerns }}{{ form.top_concerns.errors }}<small class="profile-help">{{ form.top_concerns.help_text }}</small></div>
     </section>
 

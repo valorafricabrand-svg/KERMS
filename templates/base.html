@@ -7,8 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
-  {% if request.path == "/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=3">{% endif %}
+  <link rel="stylesheet" href="{% static 'css/entrepreneur-workflow.css' %}">
+  {% if request.path == "/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=6">{% endif %}
   {% if request.path == "/business-profile/" %}<link rel="stylesheet" href="{% static 'css/business-profile.css' %}?v=2">{% endif %}
+  {% if '/locations/' in request.path %}<link rel="stylesheet" href="{% static 'css/business-locations.css' %}?v=3">{% endif %}
+  {% if '/assessments/' in request.path %}<link rel="stylesheet" href="{% static 'css/entrepreneur-assessments.css' %}?v=2">{% endif %}
 </head>
 <body>
   <button class="mobile-menu" type="button" aria-label="Open navigation">☰</button>
@@ -17,18 +20,25 @@
     <nav aria-label="Primary navigation">
       <a href="/" class="{% if request.path == '/' %}active{% endif %}"><span class="nav-icon">▦</span><span>Overview</span></a>
       <a href="/business-profile/" class="{% if '/business-profile/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Business profile</span></a>
+      <a href="/locations/" class="{% if '/locations/' in request.path %}active{% endif %}"><span class="nav-icon">⌖</span><span>Business locations</span></a>
+      <a href="/assessments/" class="{% if '/assessments/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Entrepreneur assessments</span></a>
       <a href="/risks/" class="{% if '/risks/' in request.path %}active{% endif %}"><span class="nav-icon">◫</span><span>Risk register</span></a>
-      <a href="/assets/" class="{% if '/assets/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Assets & dependencies</span></a>
-      <a href="/scenarios/" class="{% if '/scenarios/' in request.path %}active{% endif %}"><span class="nav-icon">⟳</span><span>Scenarios & stress tests</span></a>
-      <a href="/management/" class="{% if '/management/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Leadership handovers</span></a>
-      <a href="/assurance/" class="{% if '/assurance/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Controls & assurance</span></a>
       <a href="/incidents/" class="{% if '/incidents/' in request.path %}active{% endif %}"><span class="nav-icon">!</span><span>Incidents & losses</span></a>
-      <a href="/governance/" class="{% if '/governance/' in request.path %}active{% endif %}"><span class="nav-icon">§</span><span>Governance & compliance</span></a>
-      <a href="/intelligence/" class="{% if '/intelligence/' in request.path %}active{% endif %}"><span class="nav-icon">⌁</span><span>Risk intelligence</span></a>
-      <a href="/risk-bot/" class="{% if '/risk-bot/' in request.path %}active{% endif %}"><span class="nav-icon">◉</span><span>Risk monitoring bot</span></a>
-      <a href="/reports/" class="{% if '/reports/' in request.path %}active{% endif %}"><span class="nav-icon">▤</span><span>Reporting</span></a>
-      <a href="/integrations/" class="{% if '/integrations/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Integrations & API</span></a>
-      <a href="/admin/"><span class="nav-icon">⚙</span><span>Administration</span></a>
+      <details class="nav-more" {% if '/assets/' in request.path or '/scenarios/' in request.path or '/management/' in request.path or '/assurance/' in request.path or '/governance/' in request.path or '/intelligence/' in request.path or '/risk-bot/' in request.path or '/reports/' in request.path or '/integrations/' in request.path or '/admin/' in request.path %}open{% endif %}>
+        <summary><span class="nav-icon">⋯</span><span>Additional tools</span></summary>
+        <div class="nav-more-items">
+          <a href="/assets/" class="{% if '/assets/' in request.path %}active{% endif %}"><span class="nav-icon">◇</span><span>Assets & dependencies</span></a>
+          <a href="/scenarios/" class="{% if '/scenarios/' in request.path %}active{% endif %}"><span class="nav-icon">⟳</span><span>Scenarios & stress tests</span></a>
+          <a href="/management/" class="{% if '/management/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Leadership handovers</span></a>
+          <a href="/assurance/" class="{% if '/assurance/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Controls & assurance</span></a>
+          <a href="/governance/" class="{% if '/governance/' in request.path %}active{% endif %}"><span class="nav-icon">§</span><span>Governance & compliance</span></a>
+          <a href="/intelligence/" class="{% if '/intelligence/' in request.path %}active{% endif %}"><span class="nav-icon">⌁</span><span>Risk intelligence</span></a>
+          <a href="/risk-bot/" class="{% if '/risk-bot/' in request.path %}active{% endif %}"><span class="nav-icon">◉</span><span>Risk monitoring bot</span></a>
+          <a href="/reports/" class="{% if '/reports/' in request.path %}active{% endif %}"><span class="nav-icon">▤</span><span>Reporting</span></a>
+          <a href="/integrations/" class="{% if '/integrations/' in request.path %}active{% endif %}"><span class="nav-icon">⇄</span><span>Integrations & API</span></a>
+          <a href="/admin/"><span class="nav-icon">⚙</span><span>Administration</span></a>
+        </div>
+      </details>
     </nav>
     <a href="/risks/new/" class="sidebar-action">+ Register new risk</a>
     <div class="user-panel"><span class="avatar">{{ request.user.username|first|upper }}</span><div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><span>{{ request.user.email }}</span></div><a href="/admin/logout/?next=/" title="Sign out">↪</a></div>
@@ -39,5 +49,6 @@
     {% block content %}{% endblock %}
   </main>
   <script src="/static/js/app.js"></script>
+  {% block page_scripts %}{% endblock %}
 </body>
 </html>

@@ -4,6 +4,7 @@ from .models import (
     EnterpriseFunction, ExternalStakeholder, Location, Organization,
     OrganizationMembership, Risk, RiskAppetite, RiskAssessment, RiskCategory,
     RiskControl, RiskTheme, RiskTreatment, StrategicObjective,
+    EntrepreneurAssessment,
     ReportTemplate, Report, ReportSchedule, AssuranceTest,
     ManagementTransition, ManagementTransitionRiskReview,
     ExternalRiskSource, ExternalRiskAlert, Asset, Portfolio,
@@ -72,8 +73,9 @@ class OrganizationAdmin(admin.ModelAdmin):
 
 @admin.register(Location)
 class LocationAdmin(admin.ModelAdmin):
-    list_display = ("name", "country", "region")
-    list_filter = ("country",)
+    list_display = ("name", "organization", "site_type", "country", "region")
+    list_filter = ("organization", "site_type", "country")
+    search_fields = ("name", "address", "region")
 
 
 @admin.register(Risk)
@@ -89,6 +91,7 @@ admin.site.register(RiskAssessment)
 admin.site.register(ManagementTransition)
 admin.site.register(ManagementTransitionRiskReview)
 admin.site.register(OrganizationMembership)
+admin.site.register(EntrepreneurAssessment)
 admin.site.register(ReportTemplate)
 admin.site.register(Report)
 admin.site.register(ReportSchedule)

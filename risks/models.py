@@ -1,4 +1,7 @@
 from django.db import models
+from django.utils import timezone
+
+from .assessment_questions import ASSESSMENT_QUESTION_KEYS, RESPONSE_CHOICES
 
 
 class RiskCategory(models.Model):
@@ -144,12 +147,6 @@ class BusinessProfile(models.Model):
         ALTERNATIVES = "alternatives", "I have alternative suppliers"
         NOT_SURE = "not_sure", "Not sure"
 
-    class CheckStatus(models.TextChoices):
-        IN_PLACE = "in_place", "Yes, in place"
-        PARTLY = "partly", "Partly"
-        NOT_IN_PLACE = "not_in_place", "Not yet"
-        NOT_SURE = "not_sure", "Not sure"
-
     COUNTY_CHOICES = [
         ("Baringo", "Baringo"), ("Bomet", "Bomet"), ("Bungoma", "Bungoma"),
         ("Busia", "Busia"), ("Elgeyo-Marakwet", "Elgeyo-Marakwet"),
@@ -213,30 +210,6 @@ class BusinessProfile(models.Model):
     supplier_reliance = models.CharField(
         max_length=20, choices=SupplierReliance.choices, blank=True
     )
-    keeps_financial_records = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    separates_business_finances = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    permits_and_licences = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    has_supplier_alternatives = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    backs_up_important_records = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    has_business_continuity_plan = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    protects_digital_payments = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
-    has_relevant_insurance = models.CharField(
-        max_length=16, choices=CheckStatus.choices, blank=True
-    )
     top_concerns = models.TextField(blank=True)
     updated_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
@@ -256,35 +229,113 @@ class BusinessProfile(models.Model):
         )
         return round(sum(value not in (None, "") for value in fields) / len(fields) * 100)
 
-    @property
-    def assessment_completion(self):
-        fields = (
-            self.keeps_financial_records,
-            self.separates_business_finances,
-            self.permits_and_licences,
-            self.has_supplier_alternatives,
-            self.backs_up_important_records,
-            self.has_business_continuity_plan,
-            self.protects_digital_payments,
-            self.has_relevant_insurance,
-        )
-        return round(sum(bool(value) for value in fields) / len(fields) * 100)
-
     def __str__(self):
         return f"Business profile - {self.organization}"
 
 
+class EntrepreneurAssessment(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SUBMITTED = "submitted", "Submitted for review"
+        REVIEWED = "reviewed", "Reviewed"
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.CASCADE, related_name="entrepreneur_assessments"
+    )
+    assessment_date = models.DateField(default=timezone.localdate)
+    version = models.CharField(max_length=12, default="1.0")
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.DRAFT
+    )
+    responses = models.JSONField(default=dict, blank=True)
+    business_context = models.TextField(blank=True)
+    priority_actions = models.TextField(blank=True)
+    review_notes = models.TextField(blank=True)
+    risks = models.ManyToManyField(
+        "Risk", blank=True, related_name="entrepreneur_assessments"
+    )
+    created_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="created_entrepreneur_assessments",
+    )
+    reviewed_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_entrepreneur_assessments",
+    )
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-assessment_date", "-created_at")
+
+    @property
+    def answered_count(self):
+        valid_answers = {value for value, _ in RESPONSE_CHOICES}
+        return sum(
+            self.responses.get(key) in valid_answers
+            for key in ASSESSMENT_QUESTION_KEYS
+        )
+
+    @property
+    def question_count(self):
+        return len(ASSESSMENT_QUESTION_KEYS)
+
+    @property
+    def completion_percentage(self):
+        return round(self.answered_count / self.question_count * 100)
+
+    def __str__(self):
+        return f"Assessment {self.pk or 'new'} - {self.organization}"
+
+
 class Location(models.Model):
+    class SiteType(models.TextChoices):
+        SHOP = "shop", "Shop or market stall"
+        FARM = "farm", "Farm or production site"
+        OFFICE = "office", "Office or service premises"
+        WORKSHOP = "workshop", "Workshop or factory"
+        WAREHOUSE = "warehouse", "Warehouse or storage"
+        TRANSPORT = "transport", "Transport yard or route base"
+        OTHER = "other", "Other business site"
+
+    EXPOSURE_CHOICES = [
+        ("flooding", "Flooding or poor drainage"),
+        ("water_stress", "Water shortage or drought"),
+        ("extreme_heat", "Extreme heat"),
+        ("erosion", "Erosion or slope instability"),
+        ("coastal_storm", "Coastal conditions or strong storms"),
+        ("fire", "Fire or vegetation fire"),
+        ("road_access", "Road or transport access disruption"),
+        ("power_connectivity", "Power or communications disruption"),
+    ]
+
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="locations")
     name = models.CharField(max_length=160)
-    country = models.CharField(max_length=100)
+    country = models.CharField(max_length=100, default="Kenya")
     region = models.CharField(max_length=100, blank=True)
+    address = models.CharField(max_length=255, blank=True)
+    site_type = models.CharField(
+        max_length=20, choices=SiteType.choices, default=SiteType.OTHER
+    )
     latitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
     longitude = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    exposure_factors = models.JSONField(default=list, blank=True)
+    exposure_notes = models.TextField(blank=True)
+
     class Meta:
         unique_together = ("organization", "name", "country")
         ordering = ("country", "name")
-    def __str__(self): return f"{self.name}, {self.country}"
+
+    def __str__(self):
+        return f"{self.name}, {self.country}"
 
 
 class Risk(models.Model):

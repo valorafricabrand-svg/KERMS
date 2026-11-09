@@ -6,10 +6,13 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from .assessment_questions import ASSESSMENT_QUESTION_KEYS
 from .models import (
     ApiCredential,
     BusinessProfile,
+    EntrepreneurAssessment,
     LossIncident,
+    Location,
     ManagementTransition,
     ManagementTransitionRiskReview,
     Organization,
@@ -31,6 +34,9 @@ class RiskPlatformTests(TestCase):
         OrganizationMembership.objects.create(
             user=self.user, organization=self.organization, role="risk_manager"
         )
+
+    def assessment_answers(self, value="not_sure"):
+        return {key: value for key in ASSESSMENT_QUESTION_KEYS}
 
     def test_residual_score_and_rating(self):
         risk = Risk.objects.create(
@@ -64,10 +70,9 @@ class RiskPlatformTests(TestCase):
 
         self.assertEqual(page.status_code, 200)
         self.assertContains(page, "Business basics")
-        self.assertContains(page, "How prepared do you feel?")
         self.assertContains(page, "Mobile money")
         self.assertEqual(page.context["profile_completion"], 0)
-        self.assertEqual(page.context["assessment_completion"], 0)
+        self.assertContains(page, "Open assessment registry")
         self.assertFalse(BusinessProfile.objects.exists())
 
         response = self.client.post(
@@ -84,14 +89,6 @@ class RiskPlatformTests(TestCase):
                 "payment_methods": ["cash", "mobile_money"],
                 "customer_concentration": BusinessProfile.ConcentrationBand.NOT_SURE,
                 "supplier_reliance": BusinessProfile.SupplierReliance.FEW_OPTIONS,
-                "keeps_financial_records": BusinessProfile.CheckStatus.PARTLY,
-                "separates_business_finances": BusinessProfile.CheckStatus.IN_PLACE,
-                "permits_and_licences": BusinessProfile.CheckStatus.NOT_SURE,
-                "has_supplier_alternatives": BusinessProfile.CheckStatus.PARTLY,
-                "backs_up_important_records": BusinessProfile.CheckStatus.NOT_IN_PLACE,
-                "has_business_continuity_plan": BusinessProfile.CheckStatus.NOT_SURE,
-                "protects_digital_payments": BusinessProfile.CheckStatus.IN_PLACE,
-                "has_relevant_insurance": BusinessProfile.CheckStatus.NOT_SURE,
                 "top_concerns": "Keeping the shop open during a power outage.",
             },
         )
@@ -102,7 +99,7 @@ class RiskPlatformTests(TestCase):
         self.assertEqual(profile.sales_channels, ["physical", "social"])
         self.assertEqual(profile.payment_methods, ["cash", "mobile_money"])
         self.assertEqual(profile.profile_completion, 100)
-        self.assertEqual(profile.assessment_completion, 100)
+        self.assertFalse(EntrepreneurAssessment.objects.filter(organization=self.organization).exists())
 
     def test_business_profile_viewer_can_read_but_not_change_profile(self):
         profile = BusinessProfile.objects.create(
@@ -178,6 +175,168 @@ class RiskPlatformTests(TestCase):
         self.assertContains(response, "cannot be in the future")
         self.assertContains(response, "Tell us what kind of business you run")
         self.assertFalse(BusinessProfile.objects.exists())
+
+    def test_assessment_registry_saves_drafts_and_submits_complete_assessments(self):
+        self.client.force_login(self.user)
+        url = reverse("entrepreneur_assessment_create")
+        base_data = {
+            "organization": self.organization.pk,
+            "assessment_date": timezone.localdate().isoformat(),
+            "business_context": "We are planning for the busy season.",
+            "priority_actions": "Review cash needs every Friday.",
+        }
+
+        draft_response = self.client.post(
+            url,
+            {**base_data, "action": "save_draft"},
+        )
+
+        self.assertEqual(draft_response.status_code, 302)
+        assessment = EntrepreneurAssessment.objects.get(organization=self.organization)
+        self.assertEqual(assessment.status, EntrepreneurAssessment.Status.DRAFT)
+        self.assertEqual(assessment.answered_count, 0)
+        self.assertEqual(assessment.priority_actions, "Review cash needs every Friday.")
+        self.assertEqual(assessment.created_by, self.user)
+
+        submit_response = self.client.post(
+            reverse("entrepreneur_assessment_detail", args=[assessment.pk]),
+            {**base_data, **self.assessment_answers("partly"), "action": "submit"},
+        )
+
+        self.assertRedirects(
+            submit_response,
+            reverse("entrepreneur_assessment_detail", args=[assessment.pk]),
+        )
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.status, EntrepreneurAssessment.Status.SUBMITTED)
+        self.assertIsNotNone(assessment.submitted_at)
+        self.assertEqual(assessment.answered_count, len(ASSESSMENT_QUESTION_KEYS))
+        self.assertEqual(assessment.completion_percentage, 100)
+
+    def test_assessment_submit_requires_answers_and_accepts_not_sure_as_answer(self):
+        self.client.force_login(self.user)
+        url = reverse("entrepreneur_assessment_create")
+        data = {
+            "organization": self.organization.pk,
+            "assessment_date": timezone.localdate().isoformat(),
+            "action": "submit",
+            "financial_records": "not_sure",
+        }
+
+        response = self.client.post(url, data)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Answer this question, or choose Not sure.")
+        self.assertFalse(EntrepreneurAssessment.objects.exists())
+
+    def test_assessment_registry_is_login_protected_and_viewer_is_read_only(self):
+        assessment = EntrepreneurAssessment.objects.create(
+            organization=self.organization,
+            responses={"financial_records": "partly"},
+        )
+        registry_url = reverse("entrepreneur_assessments")
+        detail_url = reverse("entrepreneur_assessment_detail", args=[assessment.pk])
+        self.assertEqual(self.client.get(registry_url).status_code, 302)
+
+        viewer = get_user_model().objects.create_user(
+            "assessment_viewer", "assessment-viewer@example.com", "test-password"
+        )
+        OrganizationMembership.objects.create(
+            user=viewer,
+            organization=self.organization,
+            role=OrganizationMembership.Role.VIEWER,
+        )
+        self.client.force_login(viewer)
+
+        self.assertEqual(self.client.get(registry_url).status_code, 200)
+        self.assertEqual(self.client.get(detail_url).status_code, 200)
+        self.assertEqual(
+            self.client.get(
+                f"{reverse('entrepreneur_assessment_create')}?organization={self.organization.pk}"
+            ).status_code,
+            403,
+        )
+        self.assertEqual(
+            self.client.post(
+                detail_url,
+                {"action": "save_draft"},
+            ).status_code,
+            403,
+        )
+
+    def test_assessment_review_can_link_only_risks_in_its_organization(self):
+        assessment = EntrepreneurAssessment.objects.create(
+            organization=self.organization,
+            status=EntrepreneurAssessment.Status.SUBMITTED,
+            responses=self.assessment_answers(),
+        )
+        own_risk = Risk.objects.create(
+            organization=self.organization,
+            reference="OWN-RISK",
+            title="Cash shortfall",
+            description="Cash may be insufficient for bills.",
+            risk_type=Risk.RiskType.FINANCIAL,
+        )
+        other_organization = Organization.objects.create(
+            name="Other Assessment Business", code="OTHERASSESS"
+        )
+        other_risk = Risk.objects.create(
+            organization=other_organization,
+            reference="OTHER-RISK",
+            title="Private risk",
+            description="Must not be linked across organizations.",
+            risk_type=Risk.RiskType.OPERATIONAL,
+        )
+        self.client.force_login(self.user)
+        detail_url = reverse("entrepreneur_assessment_detail", args=[assessment.pk])
+
+        invalid_response = self.client.post(
+            detail_url,
+            {
+                "action": "review",
+                "review_notes": "Follow up next week.",
+                "risk_links": [own_risk.pk, other_risk.pk],
+            },
+        )
+
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertContains(invalid_response, "Select a valid choice")
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.status, EntrepreneurAssessment.Status.SUBMITTED)
+        self.assertFalse(assessment.risks.exists())
+
+        response = self.client.post(
+            detail_url,
+            {
+                "action": "review",
+                "review_notes": "Follow up next week.",
+                "risk_links": [own_risk.pk],
+            },
+        )
+
+        self.assertRedirects(response, detail_url)
+        assessment.refresh_from_db()
+        self.assertEqual(assessment.status, EntrepreneurAssessment.Status.REVIEWED)
+        self.assertEqual(assessment.reviewed_by, self.user)
+        self.assertEqual(list(assessment.risks.all()), [own_risk])
+
+    def test_assessment_records_are_organization_scoped(self):
+        other_organization = Organization.objects.create(
+            name="Other Assessment Workspace", code="OTHERWORK"
+        )
+        assessment = EntrepreneurAssessment.objects.create(
+            organization=other_organization,
+            responses=self.assessment_answers(),
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("entrepreneur_assessment_detail", args=[assessment.pk])
+        )
+
+        self.assertEqual(response.status_code, 404)
+        registry = self.client.get(reverse("entrepreneur_assessments"))
+        self.assertNotContains(registry, f"Assessment #{assessment.pk}")
 
     def test_dashboard_is_visible_to_member(self):
         self.client.force_login(self.user)
@@ -261,7 +420,7 @@ class RiskPlatformTests(TestCase):
         self.assertContains(response, "Supplier delivery interruption")
         self.assertNotContains(response, "Private business risk")
 
-    def test_owner_dashboard_shows_business_profile_and_preparedness_without_scoring(self):
+    def test_owner_dashboard_shows_business_profile_and_separate_assessment(self):
         BusinessProfile.objects.create(
             organization=self.organization,
             sector=BusinessProfile.Sector.RETAIL,
@@ -275,8 +434,6 @@ class RiskPlatformTests(TestCase):
             payment_methods=["cash", "mobile_money"],
             customer_concentration=BusinessProfile.ConcentrationBand.NOT_SURE,
             supplier_reliance=BusinessProfile.SupplierReliance.FEW_OPTIONS,
-            keeps_financial_records=BusinessProfile.CheckStatus.PARTLY,
-            protects_digital_payments=BusinessProfile.CheckStatus.IN_PLACE,
             top_concerns="Keeping the shop open during a power outage.",
         )
         other_organization = Organization.objects.create(
@@ -287,18 +444,33 @@ class RiskPlatformTests(TestCase):
             sector=BusinessProfile.Sector.FINANCE,
             top_concerns="Private organization information",
         )
+        assessment = EntrepreneurAssessment.objects.create(
+            organization=self.organization,
+            assessment_date=timezone.localdate(),
+            status=EntrepreneurAssessment.Status.SUBMITTED,
+            responses={
+                "financial_records": "partly",
+                "payment_security": "in_place",
+                "customer_needs": "not_sure",
+            },
+            priority_actions="Keep a weekly cash-flow forecast.",
+            created_by=self.user,
+        )
         self.client.force_login(self.user)
 
         response = self.client.get(reverse("dashboard"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Business snapshot")
+        self.assertContains(response, "Assessment registry")
+        self.assertContains(response, "Submitted for review")
+        self.assertContains(response, "3 of 17 topics answered")
         self.assertContains(response, "Retail and shops")
         self.assertContains(response, "Nairobi")
         self.assertContains(response, "Mobile money")
         self.assertContains(response, "Partly")
         self.assertContains(response, "Keeping the shop open")
-        self.assertContains(response, "not an automated risk score")
+        self.assertContains(response, f"/assessments/{assessment.pk}/")
         self.assertNotContains(response, "Private organization information")
 
     def test_risk_bot_dashboard_is_login_protected(self):
@@ -539,6 +711,208 @@ class RiskPlatformTests(TestCase):
         response = self.client.get(reverse("assets"))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Assets & dependencies")
+
+    def test_business_location_can_be_mapped_with_confirmed_local_factors(self):
+        BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.AGRICULTURE,
+        )
+        self.client.force_login(self.user)
+        url = f"{reverse('business_locations')}?organization={self.organization.pk}"
+
+        page = self.client.get(url)
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, "The map only shows the pins you provide")
+        self.assertContains(page, "No business sites have been mapped yet")
+        self.assertContains(page, "Considerations for farming and agriculture")
+        self.assertContains(page, "Water availability, dry spells, and heavy rainfall")
+
+        response = self.client.post(
+            url,
+            {
+                "organization": self.organization.pk,
+                "name": "Kibera Market Shop",
+                "site_type": Location.SiteType.SHOP,
+                "address": "Near the market",
+                "region": "Nairobi",
+                "country": "Kenya",
+                "latitude": "-1.313000",
+                "longitude": "36.787000",
+                "exposure_factors": ["flooding", "power_connectivity"],
+                "exposure_notes": "Water entered the lane during heavy rain.",
+            },
+        )
+
+        self.assertRedirects(
+            response, f"{reverse('business_locations')}?organization={self.organization.pk}"
+        )
+        location = Location.objects.get(organization=self.organization)
+        self.assertEqual(location.exposure_factors, ["flooding", "power_connectivity"])
+        self.assertEqual(location.region, "Nairobi")
+        self.assertEqual(str(location.latitude), "-1.313000")
+
+        invalid_response = self.client.post(
+            url,
+            {
+                "organization": self.organization.pk,
+                "name": "Invalid coordinate site",
+                "site_type": Location.SiteType.SHOP,
+                "country": "Kenya",
+                "latitude": "91",
+                "longitude": "36",
+            },
+        )
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertContains(invalid_response, "Latitude must be between -90 and 90")
+        self.assertFalse(
+            Location.objects.filter(name="Invalid coordinate site").exists()
+        )
+
+    def test_business_location_editor_is_organization_scoped_and_role_protected(self):
+        other_organization = Organization.objects.create(
+            name="Other Business Locations", code="OTHER-LOC"
+        )
+        private_location = Location.objects.create(
+            organization=other_organization,
+            name="Private location",
+            country="Kenya",
+            latitude="-1.000000",
+            longitude="36.000000",
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            f"{reverse('business_locations')}?organization={other_organization.pk}"
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["organization"], self.organization)
+        self.assertNotContains(response, private_location.name)
+
+        response = self.client.post(
+            f"{reverse('business_locations')}?organization={self.organization.pk}",
+            {
+                "organization": self.organization.pk,
+                "location_id": private_location.pk,
+                "name": "Tampered site",
+                "site_type": Location.SiteType.SHOP,
+                "country": "Kenya",
+                "latitude": "-1.000000",
+                "longitude": "36.000000",
+            },
+        )
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(Location.objects.filter(name="Tampered site").exists())
+
+    def test_business_location_viewer_cannot_add_site(self):
+        viewer = get_user_model().objects.create_user(
+            "location_viewer", "location-viewer@example.com", "test-password"
+        )
+        OrganizationMembership.objects.create(
+            user=viewer,
+            organization=self.organization,
+            role=OrganizationMembership.Role.VIEWER,
+        )
+        self.client.force_login(viewer)
+
+        response = self.client.get(reverse("business_locations"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "view-only access")
+        response = self.client.post(
+            reverse("business_locations"),
+            {
+                "organization": self.organization.pk,
+                "name": "Viewer cannot add",
+                "site_type": Location.SiteType.SHOP,
+                "country": "Kenya",
+                "latitude": "-1.000000",
+                "longitude": "36.000000",
+            },
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Location.objects.filter(name="Viewer cannot add").exists())
+
+    def test_business_location_viewer_cannot_create_risk(self):
+        viewer = get_user_model().objects.create_user(
+            "risk_viewer", "risk-viewer@example.com", "test-password"
+        )
+        OrganizationMembership.objects.create(
+            user=viewer,
+            organization=self.organization,
+            role=OrganizationMembership.Role.VIEWER,
+        )
+        self.client.force_login(viewer)
+
+        response = self.client.get(
+            f"{reverse('risk_create')}?organization={self.organization.pk}"
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_site_risk_link_stays_with_its_organization(self):
+        location = Location.objects.create(
+            organization=self.organization,
+            name="Nairobi Shop",
+            country="Kenya",
+            region="Nairobi",
+            latitude="-1.286389",
+            longitude="36.817223",
+        )
+        other_organization = Organization.objects.create(
+            name="Another Site Business", code="ANOTHER-SITE"
+        )
+        other_location = Location.objects.create(
+            organization=other_organization,
+            name="Other business site",
+            country="Kenya",
+            latitude="-1.200000",
+            longitude="36.800000",
+        )
+        self.client.force_login(self.user)
+        url = (
+            f"{reverse('risk_create')}?organization={self.organization.pk}"
+            f"&location={location.pk}"
+        )
+
+        page = self.client.get(url)
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(
+            page.context["form"].fields["location"].queryset.get(), location
+        )
+
+        response = self.client.post(
+            f"{reverse('risk_create')}?organization={self.organization.pk}",
+            {
+                "organization": self.organization.pk,
+                "reference": "SITE-RISK-1",
+                "title": "Heavy rain could interrupt shop access",
+                "description": "If heavy rain blocks the access road, customers may not reach the shop.",
+                "risk_type": Risk.RiskType.CLIMATE,
+                "location": location.pk,
+                "status": Risk.Status.IDENTIFIED,
+                "likelihood": 3,
+                "impact": 3,
+                "residual_likelihood": 2,
+                "residual_impact": 2,
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        risk = Risk.objects.get(reference="SITE-RISK-1")
+        self.assertEqual(risk.location, location)
+        self.assertNotEqual(risk.location, other_location)
+
+        response = self.client.post(
+            f"{reverse('risk_create')}?organization={self.organization.pk}",
+            {
+                "organization": self.organization.pk,
+                "reference": "SITE-RISK-2",
+                "title": "Cross-business location attempt",
+                "description": "A member must not link a site from another organization.",
+                "risk_type": Risk.RiskType.OPERATIONAL,
+                "location": other_location.pk,
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Risk.objects.filter(reference="SITE-RISK-2").exists())
+        self.assertTrue(response.context["form"].has_error("location"))
 
     def test_management_handover_queues_and_records_open_risk_reviews(self):
         open_risk = Risk.objects.create(

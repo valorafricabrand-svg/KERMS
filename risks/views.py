@@ -20,6 +20,8 @@ from .bot_services import evaluate_bot_transaction
 from .forms import (
     AssuranceTestForm,
     BusinessProfileForm,
+    EntrepreneurAssessmentForm,
+    EntrepreneurAssessmentReviewForm,
     FrameworkForm,
     FrameworkRequirementForm,
     GovernanceCommitteeForm,
@@ -45,6 +47,7 @@ from .models import (
     ComplianceMapping,
     ExternalRiskAlert,
     ExternalRiskSource,
+    EntrepreneurAssessment,
     FrameworkRequirement,
     GovernanceCommittee,
     GovernancePolicy,
@@ -70,8 +73,10 @@ from .models import (
     Supplier,
     WebhookEndpoint,
 )
-from .asset_forms import AssetForm, SupplierForm, DependencyForm
+from .asset_forms import AssetForm, DependencyForm, LocationForm, SupplierForm
+from .assessment_questions import ASSESSMENT_SECTIONS, RESPONSE_CHOICES
 from .scenario_library import SCENARIO_TEMPLATES, get_scenario_template
+from .site_risk_prompts import site_risk_prompts
 
 
 def user_organizations(request):
@@ -157,7 +162,294 @@ def business_profile(request):
             "form": form,
             "can_edit": can_edit,
             "profile_completion": profile.profile_completion if profile else 0,
-            "assessment_completion": profile.assessment_completion if profile else 0,
+        },
+    )
+
+
+ASSESSMENT_EDITOR_ROLES = {
+    OrganizationMembership.Role.ADMIN,
+    OrganizationMembership.Role.RISK_MANAGER,
+    OrganizationMembership.Role.ANALYST,
+}
+
+
+def build_assessment_sections(responses, form=None):
+    response_labels = dict(RESPONSE_CHOICES)
+    sections = []
+    for section in ASSESSMENT_SECTIONS:
+        questions = []
+        for key, label in section["questions"]:
+            value = responses.get(key, "")
+            questions.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "value": value,
+                    "answer": response_labels.get(value, "Not answered"),
+                    "field": form[key] if form else None,
+                }
+            )
+        sections.append(
+            {
+                "title": section["title"],
+                "description": section["description"],
+                "questions": questions,
+            }
+        )
+    return sections
+
+
+@login_required
+def business_locations(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(
+            pk=request.POST.get("organization") or request.GET.get("organization")
+        ).first()
+        or organizations.first()
+    )
+    location_form = LocationForm()
+    locations = Location.objects.none()
+    business_profile = (
+        BusinessProfile.objects.filter(organization=organization).first()
+        if organization
+        else None
+    )
+    can_edit = bool(
+        organization
+        and organization_role(request.user, organization) in ASSESSMENT_EDITOR_ROLES
+    )
+
+    if organization:
+        locations = list(
+            Location.objects.filter(organization=organization)
+            .annotate(risk_count=Count("risks"), asset_count=Count("assets"))
+            .prefetch_related("risks")
+        )
+
+    if request.method == "POST":
+        if not organization or not can_edit:
+            raise PermissionDenied
+        location_id = request.POST.get("location_id")
+        instance = (
+            get_object_or_404(
+                Location, organization=organization, pk=location_id
+            )
+            if location_id
+            else None
+        )
+        location_form = LocationForm(request.POST, instance=instance)
+        if location_form.is_valid():
+            location = location_form.save(commit=False)
+            location.organization = organization
+            location.save()
+            messages.success(request, "Business location saved.")
+            return redirect(f"/locations/?organization={organization.pk}")
+    elif request.GET.get("edit") and organization:
+        instance = get_object_or_404(
+            Location, organization=organization, pk=request.GET["edit"]
+        )
+        location_form = LocationForm(instance=instance)
+
+    return render(
+        request,
+        "business_locations.html",
+        {
+            "organizations": organizations,
+            "organization": organization,
+            "locations": locations,
+            "location_form": location_form,
+            "can_edit": can_edit,
+            "editing_location": getattr(location_form.instance, "pk", None),
+            "exposure_choices": Location.EXPOSURE_CHOICES,
+            "business_profile": business_profile,
+            "site_risk_prompts": site_risk_prompts(business_profile),
+        },
+    )
+
+
+@login_required
+def entrepreneur_assessments(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(pk=request.GET.get("organization")).first()
+        or organizations.first()
+    )
+    if not organization:
+        return render(
+            request,
+            "assessment_list.html",
+            {"organizations": organizations, "organization": None},
+        )
+    assessments = EntrepreneurAssessment.objects.filter(
+        organization=organization
+    ).select_related("created_by", "reviewed_by")
+    can_edit = organization_role(request.user, organization) in ASSESSMENT_EDITOR_ROLES
+    return render(
+        request,
+        "assessment_list.html",
+        {
+            "organizations": organizations,
+            "organization": organization,
+            "assessments": assessments,
+            "can_edit": can_edit,
+        },
+    )
+
+
+@login_required
+def entrepreneur_assessment_create(request):
+    organizations = user_organizations(request)
+    organization = organizations.filter(
+        pk=request.GET.get("organization") or request.POST.get("organization")
+    ).first() or organizations.first()
+    if not organization:
+        raise PermissionDenied
+    if organization_role(request.user, organization) not in ASSESSMENT_EDITOR_ROLES:
+        raise PermissionDenied
+
+    form = EntrepreneurAssessmentForm(request.POST or None)
+    if request.method == "POST":
+        action = request.POST.get("action")
+        if action not in {"save_draft", "submit"}:
+            raise PermissionDenied
+        if form.is_valid():
+            if action == "submit":
+                for key in form.unanswered_questions():
+                    form.add_error(key, "Answer this question, or choose Not sure.")
+            if not form.errors:
+                assessment = form.save(commit=False)
+                assessment.organization = organization
+                assessment.created_by = request.user
+                assessment.responses = form.assessment_responses()
+                if action == "submit":
+                    assessment.status = EntrepreneurAssessment.Status.SUBMITTED
+                    assessment.submitted_at = timezone.now()
+                assessment.save()
+                messages.success(
+                    request,
+                    "Assessment submitted for review."
+                    if action == "submit"
+                    else "Assessment draft saved.",
+                )
+                return redirect("entrepreneur_assessment_detail", pk=assessment.pk)
+
+    return render(
+        request,
+        "assessment_form.html",
+        {
+            "organization": organization,
+            "form": form,
+            "assessment_sections": build_assessment_sections({}, form),
+            "is_new": True,
+        },
+    )
+
+
+@login_required
+def entrepreneur_assessment_detail(request, pk):
+    organizations = user_organizations(request)
+    assessment = get_object_or_404(
+        EntrepreneurAssessment.objects.select_related(
+            "organization", "created_by", "reviewed_by"
+        ).prefetch_related("risks"),
+        pk=pk,
+        organization__in=organizations,
+    )
+    can_edit = (
+        organization_role(request.user, assessment.organization)
+        in ASSESSMENT_EDITOR_ROLES
+    )
+    form = None
+    review_form = None
+    if request.method == "POST":
+        if not can_edit:
+            raise PermissionDenied
+        action = request.POST.get("action")
+        if assessment.status == EntrepreneurAssessment.Status.DRAFT:
+            if action not in {"save_draft", "submit"}:
+                raise PermissionDenied
+            form = EntrepreneurAssessmentForm(request.POST, instance=assessment)
+            if form.is_valid():
+                if action == "submit":
+                    for key in form.unanswered_questions():
+                        form.add_error(key, "Answer this question, or choose Not sure.")
+                if not form.errors:
+                    assessment = form.save(commit=False)
+                    assessment.responses = form.assessment_responses()
+                    if action == "submit":
+                        assessment.status = EntrepreneurAssessment.Status.SUBMITTED
+                        assessment.submitted_at = timezone.now()
+                    assessment.save()
+                    messages.success(
+                        request,
+                        "Assessment submitted for review."
+                        if action == "submit"
+                        else "Assessment draft saved.",
+                    )
+                    return redirect(
+                        "entrepreneur_assessment_detail", pk=assessment.pk
+                    )
+            return render(
+                request,
+                "assessment_form.html",
+                {
+                    "organization": assessment.organization,
+                    "assessment": assessment,
+                    "form": form,
+                    "assessment_sections": build_assessment_sections(
+                        assessment.responses, form
+                    ),
+                    "is_new": False,
+                },
+            )
+        if (
+            assessment.status != EntrepreneurAssessment.Status.SUBMITTED
+            or action != "review"
+        ):
+            raise PermissionDenied
+        review_form = EntrepreneurAssessmentReviewForm(request.POST)
+        review_form.fields["risk_links"].queryset = Risk.objects.filter(
+            organization=assessment.organization
+        ).order_by("reference")
+        if review_form.is_valid():
+            assessment.review_notes = review_form.cleaned_data["review_notes"]
+            assessment.status = EntrepreneurAssessment.Status.REVIEWED
+            assessment.reviewed_by = request.user
+            assessment.reviewed_at = timezone.now()
+            assessment.save()
+            assessment.risks.set(review_form.cleaned_data["risk_links"])
+            messages.success(request, "Assessment review recorded.")
+            return redirect("entrepreneur_assessment_detail", pk=assessment.pk)
+    else:
+        form = (
+            EntrepreneurAssessmentForm(instance=assessment)
+            if assessment.status == EntrepreneurAssessment.Status.DRAFT and can_edit
+            else None
+        )
+        review_form = None
+        if (
+            assessment.status == EntrepreneurAssessment.Status.SUBMITTED
+            and can_edit
+        ):
+            review_form = EntrepreneurAssessmentReviewForm(
+                initial={"risk_links": assessment.risks.all()}
+            )
+            review_form.fields["risk_links"].queryset = Risk.objects.filter(
+                organization=assessment.organization
+            ).order_by("reference")
+
+    return render(
+        request,
+        "assessment_detail.html",
+        {
+            "assessment": assessment,
+            "can_edit": can_edit,
+            "form": form,
+            "review_form": review_form,
+            "assessment_sections": build_assessment_sections(
+                assessment.responses, form
+            ),
         },
     )
 
@@ -193,9 +485,24 @@ def dashboard(request):
         if organization
         else None
     )
+    location_rows = (
+        Location.objects.filter(organization=organization)
+        if organization
+        else Location.objects.none()
+    )
+    location_count = location_rows.count()
+    mapped_location_count = location_rows.filter(
+        latitude__isnull=False, longitude__isnull=False
+    ).count()
+    latest_assessment = (
+        EntrepreneurAssessment.objects.filter(organization=organization)
+        .select_related("created_by", "reviewed_by")
+        .first()
+        if organization
+        else None
+    )
     profile_sales_channels = []
     profile_payment_methods = []
-    profile_preparedness = []
     if business_profile_record:
         profile_sales_channels = [
             label
@@ -207,29 +514,29 @@ def dashboard(request):
             for value, label in BusinessProfile.PAYMENT_CHOICES
             if value in business_profile_record.payment_methods
         ]
-        check_status_labels = dict(BusinessProfile.CheckStatus.choices)
-        preparedness_fields = (
-            ("keeps_financial_records", "Keeps basic money-in and money-out records"),
-            ("separates_business_finances", "Keeps business and personal money separate"),
-            ("permits_and_licences", "Understands required permits and licences"),
-            ("has_supplier_alternatives", "Has an alternative for important supplies"),
-            ("backs_up_important_records", "Can recover important business records"),
-            ("has_business_continuity_plan", "Has a plan for a temporary closure"),
-            ("protects_digital_payments", "Uses safe mobile and online payment practices"),
-            ("has_relevant_insurance", "Has considered insurance for key losses"),
-        )
-        profile_preparedness = [
+    assessment_response_labels = dict(RESPONSE_CHOICES)
+    assessment_questions = (
+        [
             {
                 "label": label,
-                "status": getattr(business_profile_record, field_name),
-                "status_label": check_status_labels.get(
-                    getattr(business_profile_record, field_name), "Not answered"
+                "status": latest_assessment.responses.get(key, ""),
+                "status_label": assessment_response_labels.get(
+                    latest_assessment.responses.get(key, ""), "Not answered"
                 ),
-                "status_class": getattr(business_profile_record, field_name)
+                "status_class": latest_assessment.responses.get(key, "")
                 or "not-answered",
             }
-            for field_name, label in preparedness_fields
+            for section in ASSESSMENT_SECTIONS
+            for key, label in section["questions"]
         ]
+        if latest_assessment
+        else []
+    )
+    assessment_topics_to_discuss = [
+        item
+        for item in assessment_questions
+        if item["status"] in {"partly", "not_in_place", "not_sure"}
+    ]
     treatments = (
         RiskTreatment.objects.filter(risk__organization=organization)
         .exclude(status=RiskTreatment.Status.COMPLETE)
@@ -261,11 +568,11 @@ def dashboard(request):
         and (
             not business_profile_record
             or business_profile_record.profile_completion < 100
-            or not risks.exists()
-            or not RiskBotPolicy.objects.filter(organization=organization).exists()
-            or not RiskBotTransaction.objects.filter(
+            or not EntrepreneurAssessment.objects.filter(
                 organization=organization
             ).exists()
+            or not risks.exists()
+            or not mapped_location_count
         )
     )
 
@@ -279,9 +586,12 @@ def dashboard(request):
             if business_profile_record
             else 0
         ),
+        "location_count": location_count,
+        "mapped_location_count": mapped_location_count,
         "profile_sales_channels": profile_sales_channels,
         "profile_payment_methods": profile_payment_methods,
-        "profile_preparedness": profile_preparedness,
+        "latest_assessment": latest_assessment,
+        "assessment_topics_to_discuss": assessment_topics_to_discuss,
         "priority_risks": priority_risks[:5],
         "open_risk_count": open_risk_count,
         "priority_risk_count": rating_counts["Critical"] + rating_counts["High"],
@@ -401,17 +711,40 @@ def risk_detail(request, pk):
 @login_required
 def risk_create(request):
     organizations = user_organizations(request)
+    organization = (
+        organizations.filter(
+            pk=request.POST.get("organization") or request.GET.get("organization")
+        ).first()
+        or organizations.first()
+    )
+    if (
+        organization
+        and organization_role(request.user, organization)
+        not in ASSESSMENT_EDITOR_ROLES
+    ):
+        raise PermissionDenied
     if request.method == "POST":
-        form = RiskForm(request.POST)
+        form = RiskForm(request.POST, organization=organization)
         if form.is_valid():
             risk = form.save(commit=False)
-            risk.organization = organizations.filter(pk=request.POST.get("organization")).first() or organizations.first()
-            if risk.organization:
+            risk.organization = organization
+            if organization:
                 risk.save()
                 return redirect("risk_detail", pk=risk.pk)
     else:
-        form = RiskForm()
-    return render(request, "risk_form.html", {"form": form, "organizations": organizations})
+        form = RiskForm(
+            organization=organization,
+            initial={"location": request.GET.get("location") or None},
+        )
+    return render(
+        request,
+        "risk_form.html",
+        {
+            "form": form,
+            "organizations": organizations,
+            "selected_organization": organization,
+        },
+    )
 
 
 from django.http import FileResponse, HttpResponse

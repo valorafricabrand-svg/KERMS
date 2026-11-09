@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{% if is_new %}New assessment{% else %}Edit assessment draft{% endif %} | Kenya ERM{% endblock %}
+{% block eyebrow %}Entrepreneur assessment{% endblock %}
+{% block heading %}{% if is_new %}Start an assessment{% else %}Continue assessment draft{% endif %}{% endblock %}
+{% block actions %}<a class="button secondary" href="{% if assessment %}{% url 'entrepreneur_assessment_detail' assessment.pk %}{% else %}{% url 'entrepreneur_assessments' %}?organization={{ organization.pk }}{% endif %}">Cancel</a>{% endblock %}
+{% block content %}
+<div class="assessment-page">
+  <div class="assessment-intro">
+    <span class="eyebrow">{{ organization.name }}</span>
+    <h2>A practical business check-in</h2>
+    <p>Work through the topics that matter to your business. Answer honestly; “Not sure” is useful. This assessment does not produce a credit decision or a single business score.</p>
+    <div class="assessment-method-note"><strong>How the registry works</strong><span>Save a draft, then submit it for review. The reviewer can record agreed next steps and link existing risk-register items. Answers are kept as a separate assessment record.</span></div>
+  </div>
+  <form method="post" class="assessment-form">
+    {% csrf_token %}
+    {% if is_new %}<input type="hidden" name="organization" value="{{ organization.pk }}">{% endif %}
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    {% include "assessment_fields.html" %}
+    <div class="assessment-actions">
+      <button class="button secondary" type="submit" name="action" value="save_draft">Save draft</button>
+      <button class="button" type="submit" name="action" value="submit">Submit for review</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

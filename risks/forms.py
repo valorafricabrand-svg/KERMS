@@ -1,6 +1,9 @@
 from django import forms
 from datetime import date
-from .models import BusinessProfile, Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition
+from collections import OrderedDict
+
+from .assessment_questions import ASSESSMENT_QUESTION_KEYS, ASSESSMENT_SECTIONS, RESPONSE_CHOICES
+from .models import BusinessProfile, EntrepreneurAssessment, Location, Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition
 
 
 class BusinessProfileForm(forms.ModelForm):
@@ -32,14 +35,6 @@ class BusinessProfileForm(forms.ModelForm):
             "payment_methods",
             "customer_concentration",
             "supplier_reliance",
-            "keeps_financial_records",
-            "separates_business_finances",
-            "permits_and_licences",
-            "has_supplier_alternatives",
-            "backs_up_important_records",
-            "has_business_continuity_plan",
-            "protects_digital_payments",
-            "has_relevant_insurance",
             "top_concerns",
         )
         widgets = {
@@ -88,6 +83,92 @@ class BusinessProfileForm(forms.ModelForm):
         return cleaned
 
 
+class EntrepreneurAssessmentForm(forms.ModelForm):
+    class Meta:
+        model = EntrepreneurAssessment
+        fields = ("assessment_date", "business_context", "priority_actions")
+        widgets = {
+            "assessment_date": forms.DateInput(attrs={"type": "date"}),
+            "business_context": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "What has changed, or what should the reviewer know?",
+                }
+            ),
+            "priority_actions": forms.Textarea(
+                attrs={
+                    "rows": 3,
+                    "placeholder": "What is the first practical step you want to take?",
+                }
+            ),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        question_fields = OrderedDict()
+        for section in ASSESSMENT_SECTIONS:
+            for question_key, question_text in section["questions"]:
+                question_fields[question_key] = forms.ChoiceField(
+                    label=question_text,
+                    choices=RESPONSE_CHOICES,
+                    required=False,
+                    widget=forms.RadioSelect(attrs={"class": "assessment-radio-list"}),
+                )
+                if self.instance and self.instance.pk:
+                    question_fields[question_key].initial = self.instance.responses.get(
+                        question_key, ""
+                    )
+
+        ordered_fields = OrderedDict()
+        ordered_fields["assessment_date"] = self.fields["assessment_date"]
+        ordered_fields.update(question_fields)
+        ordered_fields["business_context"] = self.fields["business_context"]
+        ordered_fields["priority_actions"] = self.fields["priority_actions"]
+        self.fields = ordered_fields
+
+    def clean_assessment_date(self):
+        assessment_date = self.cleaned_data["assessment_date"]
+        if assessment_date > date.today():
+            raise forms.ValidationError("The assessment date cannot be in the future.")
+        return assessment_date
+
+    def unanswered_questions(self):
+        return [
+            key
+            for key in ASSESSMENT_QUESTION_KEYS
+            if not self.cleaned_data.get(key)
+        ]
+
+    def assessment_responses(self):
+        return {
+            key: self.cleaned_data.get(key, "")
+            for key in ASSESSMENT_QUESTION_KEYS
+            if self.cleaned_data.get(key)
+        }
+
+
+class EntrepreneurAssessmentReviewForm(forms.ModelForm):
+    risk_links = forms.ModelMultipleChoiceField(
+        queryset=Risk.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="Link existing risk-register items",
+        help_text="Link relevant existing risks; assessment answers remain separate.",
+    )
+
+    class Meta:
+        model = EntrepreneurAssessment
+        fields = ("review_notes", "risk_links")
+        widgets = {
+            "review_notes": forms.Textarea(
+                attrs={
+                    "rows": 4,
+                    "placeholder": "Summarize what was agreed, what needs clarification, and who will follow up.",
+                }
+            )
+        }
+
+
 class RiskForm(forms.ModelForm):
     class Meta:
         model = Risk
@@ -98,8 +179,12 @@ class RiskForm(forms.ModelForm):
             "next_review_date": forms.DateInput(attrs={"type": "date"}),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, organization=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if organization:
+            self.fields["location"].queryset = organization.locations.all()
+        else:
+            self.fields["location"].queryset = Location.objects.none()
         placeholders = {
             "reference": "e.g. RISK-2026-001",
             "title": "A concise, specific risk statement",

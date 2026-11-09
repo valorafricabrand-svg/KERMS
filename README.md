@@ -34,16 +34,53 @@ files, or credentials.
 
 Signed-in members can open **Business profile** to record their sector, Kenyan
 county, business size, customer and payment channels, supplier dependence, and
-basic preparedness information. Profile details are scoped to the selected
+main concerns. Profile details are scoped to the selected
 organization; administrators, risk managers, and analysts can update them,
 while viewers have read-only access. Annual turnover is optional and collected
 only as a broad range.
 
-The page reports profile completeness and answered-question completeness only.
-Neither is a risk score, credit decision, or substitute for professional advice.
-The responses are intended to help a business owner and their risk adviser
-identify topics for discussion; they do not automatically create risks or make
-automated decisions.
+The profile is business context, not an assessment record or risk score.
+
+## Business locations and site exposures
+
+The **Business locations** workflow maps each shop, farm, market, workshop,
+office, or other operating site to a map pin and records local conditions the
+entrepreneur has observed or can verify. Approximate pins are acceptable.
+Location data is limited to the member's organization; users with viewer access
+cannot add or change sites. OpenStreetMap provides map tiles, so displaying the
+map sends ordinary tile requests to that provider.
+
+Site exposure checkboxes are discussion prompts, not official hazard data.
+The application does not infer a flood, drought, heat, or other hazard from a
+county or coordinate, and it does not calculate climate risk. Link each
+confirmed exposure to a risk-register record for that site, assess its
+likelihood and impact, record existing safeguards, and assign practical
+treatment actions. Live or historical hazard overlays should be added only
+after a suitable authoritative dataset, license, geographic coverage, update
+frequency, and uncertainty communication have been verified.
+
+Sector-specific prompts help owners consider common operational and
+business-model dependencies. They are intentionally non-exhaustive and do not
+replace local knowledge, a formal assessment, or professional advice. For
+production map traffic, select a tile provider whose service terms and capacity
+fit the deployment; the public OpenStreetMap tile service does not provide an
+application-specific availability guarantee.
+
+## Entrepreneur assessment registry
+
+The **Entrepreneur assessments** registry stores repeatable assessment records
+separately from both the business profile and risk register. Each record captures
+dated responses across finances, customers and sales, operations, permits and
+obligations, payment and information protection, and disruption recovery.
+Answers can be saved as a draft or submitted for review. Reviewers can record
+agreed follow-up and link existing risk-register items; assessments do not
+automatically create risks.
+
+Responses are categorical (“Yes, in place”, “Partly”, “Not yet”, or “Not sure”)
+and are not combined into a single rating. The registry is a structured
+conversation aid, not a credit decision, compliance certificate, or substitute
+for professional advice. Assessment versions are recorded so the questionnaire
+can evolve without conflating different question sets.
 
 ## A practical risk assessment
 

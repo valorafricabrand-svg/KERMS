@@ -71,6 +71,7 @@
       <div class="owner-profile-tags">
         <div><span>Sales channels</span>{% if profile_sales_channels %}<div class="owner-tag-list">{% for channel in profile_sales_channels %}<span>{{ channel }}</span>{% endfor %}</div>{% else %}<small>Not added</small>{% endif %}</div>
         <div><span>Payment methods</span>{% if profile_payment_methods %}<div class="owner-tag-list">{% for method in profile_payment_methods %}<span>{{ method }}</span>{% endfor %}</div>{% else %}<small>Not added</small>{% endif %}</div>
+        <div><span>Business sites</span><div class="owner-tag-list"><a href="/locations/?organization={{ organization.pk }}">{{ location_count }} site{{ location_count|pluralize }} · {{ mapped_location_count }} mapped</a></div></div>
       </div>
       {% if business_profile.top_concerns %}
       <div class="owner-profile-concern"><span>Your main concern</span><p>{{ business_profile.top_concerns|truncatechars:180 }}</p></div>
@@ -85,12 +86,18 @@
 
     <article class="card owner-profile-card owner-preparedness-card">
       <div class="card-head">
-        <div><span class="eyebrow">Your check-in</span><h2>Business preparedness</h2></div>
-        <a href="/business-profile/?organization={{ organization.pk }}">Review answers →</a>
+        <div><span class="eyebrow">Assessment registry</span><h2>Entrepreneur assessment</h2></div>
+        <a href="/assessments/?organization={{ organization.pk }}">View registry →</a>
       </div>
-      {% if business_profile %}
+      {% if latest_assessment %}
+      <div class="owner-assessment-summary">
+        <span class="badge {{ latest_assessment.status }}">{{ latest_assessment.get_status_display }}</span>
+        <span>{{ latest_assessment.assessment_date|date:"j M Y" }} · {{ latest_assessment.answered_count }} of {{ latest_assessment.question_count }} topics answered</span>
+      </div>
+      {% if assessment_topics_to_discuss %}
+      <p class="owner-assessment-label">Topics to discuss</p>
       <ul class="owner-preparedness-list">
-        {% for item in profile_preparedness %}
+        {% for item in assessment_topics_to_discuss|slice:":5" %}
         <li>
           <span class="owner-preparedness-mark {{ item.status_class }}" aria-hidden="true"></span>
           <span>{{ item.label }}</span>
@@ -98,12 +105,16 @@
         </li>
         {% endfor %}
       </ul>
-      <p class="owner-profile-footnote">These are your responses for discussion—not an automated risk score or professional assessment.</p>
+      {% else %}
+      <p class="owner-profile-footnote">No open discussion topics in the answered items. This is not a risk score or professional certification.</p>
+      {% endif %}
+      <a class="owner-assessment-open" href="/assessments/{{ latest_assessment.pk }}/">Open assessment →</a>
       {% else %}
       <div class="owner-empty owner-profile-empty">
-        <span class="owner-empty-icon" aria-hidden="true">✓</span>
-        <div><strong>Your check-in will appear here</strong><p>Answer a few optional questions to record what is already in place and where you may want help.</p></div>
+        <span class="owner-empty-icon" aria-hidden="true">＋</span>
+        <div><strong>No assessment recorded yet</strong><p>Start a structured business check-in, save a draft, or submit it for review.</p></div>
       </div>
+      <a class="owner-assessment-open" href="/assessments/new/?organization={{ organization.pk }}">Start an assessment →</a>
       {% endif %}
     </article>
   </section>
@@ -114,12 +125,12 @@
     <div class="owner-setup-copy">
       <span class="eyebrow">A helpful first step</span>
       <h2 id="setup-title">Make this dashboard yours</h2>
-      <p>Start with the risks that matter to your business. Add payment monitoring when you are ready; the dashboard will update as your real activity comes in.</p>
+      <p>Start with your business model and operating sites, then assess the risks that could interrupt your work and track practical actions.</p>
       <div class="owner-setup-links">
         {% if not business_profile or business_profile_completion < 100 %}<a class="button" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Continue business profile{% else %}Set up business profile{% endif %}</a>{% endif %}
+        {% if not mapped_location_count %}<a class="button" href="/locations/?organization={{ organization.pk }}">Map your business sites</a>{% endif %}
+        {% if not latest_assessment %}<a class="button secondary" href="/assessments/new/?organization={{ organization.pk }}">Start an assessment</a>{% endif %}
         {% if not open_risk_count %}<a class="button" href="/risks/new/">Add your first risk</a>{% else %}<a class="button secondary" href="/risks/">Review your risk list</a>{% endif %}
-        {% if not policy %}<a class="owner-text-link" href="/admin/risks/riskbotpolicy/">Set up payment alerts →</a>{% else %}<a class="owner-text-link" href="/risk-bot/">View payment monitoring →</a>{% endif %}
-        <a class="owner-text-link" href="/integrations/">Connect a business tool →</a>
       </div>
     </div>
   </section>
