@@ -1,8 +1,11 @@
 import hashlib
+import json
 from datetime import timedelta
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -17,6 +20,7 @@ from .models import (
     ManagementTransitionRiskReview,
     Organization,
     OrganizationMembership,
+    OrganizationSubscription,
     Risk,
     RiskBotAlert,
     RiskBotPolicy,
@@ -24,6 +28,8 @@ from .models import (
     RiskAssessment,
     RiskTreatment,
     StressScenario,
+    SubscriptionPlan,
+    KermsPayment,
 )
 
 
@@ -34,9 +40,306 @@ class RiskPlatformTests(TestCase):
         OrganizationMembership.objects.create(
             user=self.user, organization=self.organization, role="risk_manager"
         )
+        subscription = self.organization.subscription
+        subscription.plan = SubscriptionPlan.objects.get(code="premium")
+        subscription.status = OrganizationSubscription.Status.ACTIVE
+        subscription.onboarding_fee_waived_at = timezone.now()
+        subscription.onboarding_fee_waived_reason = "Test fixture"
+        subscription.save()
 
     def assessment_answers(self, value="not_sure"):
         return {key: value for key in ASSESSMENT_QUESTION_KEYS}
+
+    def test_billing_page_shows_onboarding_and_premium_prices(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("billing"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "KES 500")
+        self.assertContains(response, "KES 5000")
+        self.assertContains(response, "no automatic M-Pesa deductions")
+
+    def test_unpaid_workspace_is_read_only_but_remains_visible(self):
+        organization = Organization.objects.create(
+            name="Unpaid Workspace", code="UNPAID"
+        )
+        OrganizationMembership.objects.create(
+            user=self.user, organization=organization, role="risk_manager"
+        )
+        self.client.force_login(self.user)
+        url = f"{reverse('business_profile')}?organization={organization.pk}"
+
+        read_response = self.client.get(url)
+        write_response = self.client.post(
+            url,
+            {"organization": organization.pk, "sector": "retail"},
+        )
+
+        self.assertEqual(read_response.status_code, 200)
+        self.assertRedirects(
+            write_response, f"{reverse('billing')}?organization={organization.pk}"
+        )
+        self.assertFalse(BusinessProfile.objects.filter(organization=organization).exists())
+
+    def test_starter_plan_cannot_open_premium_tools(self):
+        subscription = self.organization.subscription
+        subscription.plan = SubscriptionPlan.objects.get(code="starter")
+        subscription.save()
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("reports"))
+
+        self.assertRedirects(
+            response, f"{reverse('billing')}?organization={self.organization.pk}"
+        )
+
+    def test_starter_quotas_block_extra_location_and_active_risk(self):
+        subscription = self.organization.subscription
+        subscription.plan = SubscriptionPlan.objects.get(code="starter")
+        subscription.save()
+        Location.objects.create(
+            organization=self.organization, name="Main shop", country="Kenya"
+        )
+        for index in range(5):
+            Risk.objects.create(
+                organization=self.organization,
+                reference=f"STARTER-{index}",
+                title=f"Starter risk {index}",
+                description="Existing active risk.",
+                risk_type=Risk.RiskType.OPERATIONAL,
+            )
+        self.client.force_login(self.user)
+
+        location_response = self.client.post(
+            reverse("business_locations"),
+            {
+                "organization": self.organization.pk,
+                "action": "create",
+                "name": "Second shop",
+                "country": "Kenya",
+                "site_type": Location.SiteType.SHOP,
+            },
+        )
+        risk_response = self.client.post(
+            reverse("risk_create"),
+            {"organization": self.organization.pk},
+        )
+
+        self.assertRedirects(
+            location_response, f"{reverse('billing')}?organization={self.organization.pk}"
+        )
+        self.assertRedirects(
+            risk_response, f"{reverse('billing')}?organization={self.organization.pk}"
+        )
+
+    def test_expired_premium_is_read_only_after_grace_period(self):
+        subscription = self.organization.subscription
+        subscription.current_period_end = timezone.now() - timedelta(days=8)
+        subscription.save()
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("business_profile"),
+            {"organization": self.organization.pk},
+        )
+
+        self.assertRedirects(
+            response, f"{reverse('billing')}?organization={self.organization.pk}"
+        )
+        self.assertEqual(
+            subscription.effective_status_label, "Expired — read-only"
+        )
+
+    @override_settings(
+        DARAJA_CONSUMER_KEY="",
+        DARAJA_CONSUMER_SECRET="",
+        DARAJA_SHORTCODE="",
+        DARAJA_PASSKEY="",
+        DARAJA_CALLBACK_URL="",
+    )
+    def test_billing_uses_configured_plan_price_and_reports_missing_credentials(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("billing"),
+            {
+                "organization": self.organization.pk,
+                "payment_type": KermsPayment.Purpose.SUBSCRIPTION,
+                "plan": SubscriptionPlan.objects.get(code="premium").pk,
+                "billing_cycle": OrganizationSubscription.BillingCycle.MONTHLY,
+                "phone_number": "0712345678",
+            },
+        )
+
+        payment = KermsPayment.objects.get(organization=self.organization)
+        self.assertEqual(payment.amount, Decimal("500.00"))
+        self.assertEqual(payment.status, KermsPayment.Status.FAILED)
+        self.assertContains(response, "Daraja credentials and callback URL are not configured")
+
+    def test_successful_daraja_callback_verifies_and_applies_onboarding_once(self):
+        organization = Organization.objects.create(
+            name="Callback Workspace", code="CALLBACK"
+        )
+        subscription = organization.subscription
+        payment = KermsPayment.objects.create(
+            organization=organization,
+            subscription=subscription,
+            purpose=KermsPayment.Purpose.ONBOARDING,
+            amount="500.00",
+            phone_number="254712345678",
+            checkout_request_id="ws_CO_CALLBACK_1",
+        )
+        callback = {
+            "Body": {
+                "stkCallback": {
+                    "CheckoutRequestID": payment.checkout_request_id,
+                    "ResultCode": 0,
+                    "CallbackMetadata": {
+                        "Item": [
+                            {"Name": "Amount", "Value": 500},
+                            {"Name": "MpesaReceiptNumber", "Value": "KERMS12345"},
+                            {"Name": "PhoneNumber", "Value": 254712345678},
+                        ]
+                    },
+                }
+            }
+        }
+        with patch("risks.views.query_stk_push", return_value={"ResultCode": "0"}):
+            response = self.client.post(
+                reverse("daraja_callback"),
+                data=json.dumps(callback),
+                content_type="application/json",
+            )
+            duplicate_response = self.client.post(
+                reverse("daraja_callback"),
+                data=json.dumps(callback),
+                content_type="application/json",
+            )
+
+        payment.refresh_from_db()
+        subscription.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(duplicate_response.status_code, 200)
+        self.assertEqual(payment.status, KermsPayment.Status.COMPLETED)
+        self.assertEqual(payment.mpesa_receipt_number, "KERMS12345")
+        self.assertTrue(subscription.onboarding_paid)
+        self.assertEqual(subscription.status, OrganizationSubscription.Status.ACTIVE)
+
+    def test_successful_annual_payment_activates_premium_for_twelve_months(self):
+        organization = Organization.objects.create(
+            name="Premium Workspace", code="PREMIUM"
+        )
+        subscription = organization.subscription
+        subscription.onboarding_fee_paid_at = timezone.now()
+        subscription.status = OrganizationSubscription.Status.ACTIVE
+        subscription.save()
+        payment = KermsPayment.objects.create(
+            organization=organization,
+            subscription=subscription,
+            purpose=KermsPayment.Purpose.SUBSCRIPTION,
+            plan=SubscriptionPlan.objects.get(code="premium"),
+            billing_cycle=OrganizationSubscription.BillingCycle.ANNUAL,
+            amount="5000.00",
+            phone_number="254712345678",
+            checkout_request_id="ws_CO_PREMIUM_1",
+        )
+        callback = {
+            "Body": {
+                "stkCallback": {
+                    "CheckoutRequestID": payment.checkout_request_id,
+                    "ResultCode": 0,
+                    "CallbackMetadata": {
+                        "Item": [
+                            {"Name": "Amount", "Value": 5000},
+                            {"Name": "MpesaReceiptNumber", "Value": "KERMSA12345"},
+                            {"Name": "PhoneNumber", "Value": 254712345678},
+                        ]
+                    },
+                }
+            }
+        }
+        with patch("risks.views.query_stk_push", return_value={"ResultCode": "0"}):
+            response = self.client.post(
+                reverse("daraja_callback"),
+                data=json.dumps(callback),
+                content_type="application/json",
+            )
+
+        subscription.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(subscription.plan.code, "premium")
+        self.assertEqual(
+            subscription.billing_cycle,
+            OrganizationSubscription.BillingCycle.ANNUAL,
+        )
+        self.assertEqual(
+            (subscription.current_period_end.year - subscription.current_period_start.year)
+            * 12
+            + subscription.current_period_end.month
+            - subscription.current_period_start.month,
+            12,
+        )
+
+    def test_daraja_callback_does_not_activate_when_server_verification_fails(self):
+        organization = Organization.objects.create(
+            name="Unverified Workspace", code="UNVERIFIED"
+        )
+        payment = KermsPayment.objects.create(
+            organization=organization,
+            subscription=organization.subscription,
+            purpose=KermsPayment.Purpose.ONBOARDING,
+            amount="500.00",
+            phone_number="254712345678",
+            checkout_request_id="ws_CO_CALLBACK_2",
+        )
+        callback = {
+            "Body": {
+                "stkCallback": {
+                    "CheckoutRequestID": payment.checkout_request_id,
+                    "ResultCode": 0,
+                    "CallbackMetadata": {
+                        "Item": [
+                            {"Name": "Amount", "Value": 500},
+                            {"Name": "MpesaReceiptNumber", "Value": "KERMS54321"},
+                            {"Name": "PhoneNumber", "Value": 254712345678},
+                        ]
+                    },
+                }
+            }
+        }
+        with patch(
+            "risks.views.query_stk_push",
+            return_value={"ResultCode": "1032", "ResultDesc": "Not confirmed."},
+        ):
+            response = self.client.post(
+                reverse("daraja_callback"),
+                data=json.dumps(callback),
+                content_type="application/json",
+            )
+
+        organization.subscription.refresh_from_db()
+        payment.refresh_from_db()
+        self.assertEqual(response.status_code, 503)
+        self.assertFalse(organization.subscription.onboarding_paid)
+        self.assertEqual(payment.status, KermsPayment.Status.PENDING)
+
+    def test_risk_bot_api_requires_the_premium_entitlement(self):
+        token = "starter-risk-bot-token"
+        self.create_api_credential(self.organization, token)
+        subscription = self.organization.subscription
+        subscription.plan = SubscriptionPlan.objects.get(code="starter")
+        subscription.save()
+
+        response = self.client.post(
+            reverse("api_bot_transactions"),
+            data=json.dumps({"receipt_number": "STARTER-API"}),
+            content_type="application/json",
+            HTTP_AUTHORIZATION=f"Bearer {token}",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("not included", response.json()["error"])
 
     def test_residual_score_and_rating(self):
         risk = Risk.objects.create(
@@ -813,6 +1116,12 @@ class RiskPlatformTests(TestCase):
         other_token = "organization-b-token"
         self.create_api_credential(self.organization, own_token)
         self.create_api_credential(other_organization, other_token)
+        other_subscription = other_organization.subscription
+        other_subscription.plan = SubscriptionPlan.objects.get(code="premium")
+        other_subscription.status = OrganizationSubscription.Status.ACTIVE
+        other_subscription.onboarding_fee_waived_at = timezone.now()
+        other_subscription.onboarding_fee_waived_reason = "Test fixture"
+        other_subscription.save()
         endpoint = reverse("api_bot_transactions")
         for token, receipt in (
             (own_token, "ORG-A-1"),
@@ -1198,6 +1507,12 @@ class RiskPlatformTests(TestCase):
         OrganizationMembership.objects.create(
             user=self.user, organization=other_organization, role="risk_manager"
         )
+        other_subscription = other_organization.subscription
+        other_subscription.plan = SubscriptionPlan.objects.get(code="premium")
+        other_subscription.status = OrganizationSubscription.Status.ACTIVE
+        other_subscription.onboarding_fee_waived_at = timezone.now()
+        other_subscription.onboarding_fee_waived_reason = "Test fixture"
+        other_subscription.save()
         self.client.force_login(self.user)
 
         response = self.client.post(

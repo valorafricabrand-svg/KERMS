@@ -1,4 +1,8 @@
+from datetime import timedelta
+
 from django.db import models
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils import timezone
 
 from .assessment_questions import ASSESSMENT_QUESTION_KEYS, RESPONSE_CHOICES
@@ -88,6 +92,244 @@ class OrganizationMembership(models.Model):
     organization = models.ForeignKey(Organization, on_delete=models.CASCADE, related_name="memberships")
     role = models.CharField(max_length=20, choices=Role.choices, default=Role.VIEWER)
     class Meta: unique_together = ("user", "organization")
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if not self.organization_id:
+            return
+        subscription = getattr(self.organization, "subscription", None)
+        if not subscription or not subscription.plan.seat_limit:
+            return
+        current_count = OrganizationMembership.objects.filter(
+            organization_id=self.organization_id
+        ).exclude(pk=self.pk).count()
+        if current_count >= subscription.plan.seat_limit:
+            raise ValidationError(
+                {"organization": "This plan has reached its team member limit."}
+            )
+
+
+class SubscriptionPlan(models.Model):
+    code = models.SlugField(max_length=32, unique=True)
+    name = models.CharField(max_length=80)
+    description = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+    is_premium = models.BooleanField(default=False)
+    monthly_price = models.DecimalField(max_digits=9, decimal_places=2, default=0)
+    annual_price = models.DecimalField(
+        max_digits=9, decimal_places=2, null=True, blank=True
+    )
+    seat_limit = models.PositiveIntegerField(default=3, help_text="0 means unlimited.")
+    location_limit = models.PositiveIntegerField(
+        default=1, help_text="0 means unlimited."
+    )
+    active_risk_limit = models.PositiveIntegerField(
+        default=5, help_text="0 means unlimited."
+    )
+    business_profile_enabled = models.BooleanField(default=True)
+    locations_enabled = models.BooleanField(default=True)
+    assessments_enabled = models.BooleanField(default=True)
+    risk_register_enabled = models.BooleanField(default=True)
+    incidents_enabled = models.BooleanField(default=True)
+    reports_enabled = models.BooleanField(default=False)
+    assets_enabled = models.BooleanField(default=False)
+    scenarios_enabled = models.BooleanField(default=False)
+    management_enabled = models.BooleanField(default=False)
+    assurance_enabled = models.BooleanField(default=False)
+    governance_enabled = models.BooleanField(default=False)
+    intelligence_enabled = models.BooleanField(default=False)
+    integrations_enabled = models.BooleanField(default=False)
+    risk_bot_enabled = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("monthly_price", "name")
+
+    def __str__(self):
+        return self.name
+
+    def enables(self, feature):
+        return bool(getattr(self, f"{feature}_enabled", False))
+
+
+class OrganizationSubscription(models.Model):
+    class Status(models.TextChoices):
+        ONBOARDING_DUE = "onboarding_due", "Onboarding payment due"
+        ACTIVE = "active", "Active"
+        PAST_DUE = "past_due", "Renewal payment due"
+        SUSPENDED = "suspended", "Suspended"
+        CANCELLED = "cancelled", "Cancelled"
+
+    class BillingCycle(models.TextChoices):
+        MONTHLY = "monthly", "Monthly"
+        ANNUAL = "annual", "Annual"
+
+    organization = models.OneToOneField(
+        Organization, on_delete=models.CASCADE, related_name="subscription"
+    )
+    plan = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.PROTECT, related_name="subscriptions"
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.ONBOARDING_DUE
+    )
+    billing_cycle = models.CharField(
+        max_length=12, choices=BillingCycle.choices, default=BillingCycle.MONTHLY
+    )
+    current_period_start = models.DateTimeField(null=True, blank=True)
+    current_period_end = models.DateTimeField(null=True, blank=True)
+    grace_period_days = models.PositiveSmallIntegerField(default=7)
+    onboarding_fee_paid_at = models.DateTimeField(null=True, blank=True)
+    onboarding_fee_waived_at = models.DateTimeField(null=True, blank=True)
+    onboarding_fee_waived_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="waived_kerms_onboarding_fees",
+    )
+    onboarding_fee_waived_reason = models.CharField(max_length=255, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("organization__name",)
+
+    @property
+    def onboarding_paid(self):
+        return bool(self.onboarding_fee_paid_at or self.onboarding_fee_waived_at)
+
+    @property
+    def effective_status_label(self):
+        if self.status == self.Status.ACTIVE and self.current_period_end:
+            now = timezone.now()
+            if now > self.current_period_end + timedelta(days=self.grace_period_days):
+                return "Expired — read-only"
+            if now > self.current_period_end:
+                return "Renewal grace period"
+        return self.get_status_display()
+
+    def allows_writes(self, at=None):
+        at = at or timezone.now()
+        if not self.onboarding_paid or self.status in {
+            self.Status.ONBOARDING_DUE,
+            self.Status.SUSPENDED,
+        }:
+            return False
+        if self.status in {self.Status.PAST_DUE, self.Status.CANCELLED}:
+            return bool(
+                self.current_period_end
+                and at
+                <= self.current_period_end
+                + timedelta(days=self.grace_period_days)
+            )
+        if self.status != self.Status.ACTIVE:
+            return False
+        return bool(
+            not self.current_period_end
+            or at
+            <= self.current_period_end
+            + timedelta(days=self.grace_period_days)
+        )
+
+    def __str__(self):
+        return f"{self.organization} — {self.plan}"
+
+
+class KermsPayment(models.Model):
+    class Purpose(models.TextChoices):
+        ONBOARDING = "onboarding", "One-time onboarding"
+        SUBSCRIPTION = "subscription", "Premium subscription"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Awaiting M-Pesa confirmation"
+        COMPLETED = "completed", "Paid"
+        FAILED = "failed", "Failed"
+        CANCELLED = "cancelled", "Cancelled"
+
+    organization = models.ForeignKey(
+        Organization, on_delete=models.PROTECT, related_name="kerms_payments"
+    )
+    subscription = models.ForeignKey(
+        OrganizationSubscription,
+        on_delete=models.PROTECT,
+        related_name="payments",
+    )
+    purpose = models.CharField(max_length=16, choices=Purpose.choices)
+    plan = models.ForeignKey(
+        SubscriptionPlan,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="payments",
+    )
+    billing_cycle = models.CharField(
+        max_length=12,
+        choices=OrganizationSubscription.BillingCycle.choices,
+        blank=True,
+    )
+    amount = models.DecimalField(max_digits=9, decimal_places=2)
+    phone_number = models.CharField(max_length=12)
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.PENDING
+    )
+    checkout_request_id = models.CharField(
+        max_length=128, unique=True, null=True, blank=True
+    )
+    merchant_request_id = models.CharField(max_length=128, blank=True)
+    mpesa_receipt_number = models.CharField(
+        max_length=32, unique=True, null=True, blank=True
+    )
+    provider_result_code = models.CharField(max_length=16, blank=True)
+    provider_result_description = models.CharField(max_length=255, blank=True)
+    initiated_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="initiated_kerms_payments",
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(amount__gt=0), name="kerms_payment_amount_positive"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.organization} — {self.get_purpose_display()} — {self.amount} KES"
+
+
+class BillingConfiguration(models.Model):
+    onboarding_fee = models.DecimalField(
+        max_digits=9, decimal_places=2, default=500
+    )
+    default_grace_period_days = models.PositiveSmallIntegerField(default=7)
+    updated_by = models.ForeignKey(
+        "auth.User",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="updated_kerms_billing_configurations",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("The billing configuration cannot be deleted.")
+
+    def __str__(self):
+        return "KERMS billing configuration"
 
 
 class BusinessProfile(models.Model):
@@ -337,6 +579,23 @@ class Location(models.Model):
     def __str__(self):
         return f"{self.name}, {self.country}"
 
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if not self.organization_id:
+            return
+        subscription = getattr(self.organization, "subscription", None)
+        limit = subscription.plan.location_limit if subscription else 0
+        if not limit:
+            return
+        locations = Location.objects.filter(organization_id=self.organization_id)
+        if self.pk:
+            locations = locations.exclude(pk=self.pk)
+        if locations.count() >= limit:
+            raise ValidationError(
+                {"name": "This plan has reached its business location limit."}
+            )
+
 
 class Risk(models.Model):
     class Status(models.TextChoices):
@@ -392,6 +651,24 @@ class Risk(models.Model):
         if score >= 12: return "High"
         if score >= 6: return "Medium"
         return "Low"
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if not self.organization_id or self.status == self.Status.CLOSED:
+            return
+        subscription = getattr(self.organization, "subscription", None)
+        limit = subscription.plan.active_risk_limit if subscription else 0
+        if not limit:
+            return
+        risks = Risk.objects.filter(organization_id=self.organization_id).exclude(
+            status=self.Status.CLOSED
+        )
+        if self.pk:
+            risks = risks.exclude(pk=self.pk)
+        if risks.count() >= limit:
+            raise ValidationError(
+                {"title": "This plan has reached its active risk limit."}
+            )
     def __str__(self): return f"{self.reference} - {self.title}"
 
 
@@ -1121,3 +1398,21 @@ class WebhookEndpoint(models.Model):
 
     def __str__(self):
         return self.name
+
+
+@receiver(post_save, sender=Organization)
+def create_organization_subscription(sender, instance, created, **kwargs):
+    if not created:
+        return
+    starter_plan = SubscriptionPlan.objects.get(code="starter")
+    billing_config = BillingConfiguration.objects.filter(pk=1).first()
+    OrganizationSubscription.objects.get_or_create(
+        organization=instance,
+        defaults={
+            "plan": starter_plan,
+            "status": OrganizationSubscription.Status.ONBOARDING_DUE,
+            "grace_period_days": (
+                billing_config.default_grace_period_days if billing_config else 7
+            ),
+        },
+    )

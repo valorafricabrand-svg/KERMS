@@ -34,6 +34,45 @@ be configured for a production deployment. The default local database is
 `data/riskregister.sqlite3`. Never commit `.env`, database files, uploaded
 files, or credentials.
 
+## Plans, onboarding, and M-Pesa billing
+
+New organization workspaces start on Starter in read-only mode. Members can
+review the workspace and its billing page; an administrator or risk manager
+must pay the one-time KES 500 onboarding fee with an M-Pesa STK prompt before
+workspace changes are enabled. Starter includes 3 seats, 1 business location,
+and 5 active risks. Premium is KES 500 monthly or KES 5,000 annually, with 5
+seats, 5 locations, and unlimited active risks. Premium plan features and
+quotas, the onboarding fee, and the default renewal grace period are editable
+in Django admin. Premium renewals require a new customer-approved M-Pesa prompt
+each term; they are not automatic recurring debits. After a Premium term and
+its 7-day grace period, the workspace becomes read-only.
+
+Existing organizations present when migration `0017` is applied are
+grandfathered on Premium with the onboarding fee waived, preserving their
+current access. Organizations created afterwards start on Starter with
+onboarding due. Admins can also waive an organization's onboarding fee and
+select its entitlements in the organization subscription record.
+
+To enable Daraja STK Push, configure these values as environment secrets (for
+local development, `.env` is ignored by git):
+
+```text
+DARAJA_ENVIRONMENT=sandbox
+DARAJA_CONSUMER_KEY=
+DARAJA_CONSUMER_SECRET=
+DARAJA_SHORTCODE=
+DARAJA_PASSKEY=
+DARAJA_CALLBACK_URL=https://your-public-host/payments/daraja/callback/
+DARAJA_TRANSACTION_TYPE=CustomerPayBillOnline
+```
+
+Use Safaricom sandbox credentials for testing. Live mode requires Safaricom
+production credentials and a publicly reachable HTTPS callback URL. The
+callback is treated as untrusted: KERMS checks its checkout ID, amount, phone,
+and receipt, then confirms the STK result with Safaricom's server-side STK Query
+endpoint before enabling access. Configure a public callback and complete
+Safaricom sandbox and production verification before accepting live payments.
+
 ## Entrepreneur business profile
 
 Signed-in members can open **Business profile** to record their sector, Kenyan
@@ -187,10 +226,8 @@ Example:
 
 Repeated receipt numbers are idempotent per organization. Rule breaches create
 alerts linked to the configured risk; full payer phone numbers are not included
-in alert messages. The API accepts Daraja transaction field names, but a public
-Daraja callback is deliberately not enabled: callbacks do not provide a
-verifiable signature, so use a separately secured, trusted relay and reconcile
-payments against provider records.
+in alert messages. This transaction-monitoring API is separate from the KERMS
+onboarding and subscription billing integration described above.
 
 ## Demo-only legacy preview
 

@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <link rel="stylesheet" href="{% static 'css/kerms-brand.css' %}?v=1">
   <link rel="stylesheet" href="{% static 'css/entrepreneur-workflow.css' %}">
+  {% if request.path == "/billing/" %}<link rel="stylesheet" href="{% static 'css/billing.css' %}">{% endif %}
   {% if request.path == "/dashboard/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=7">{% endif %}
   {% if request.path == "/business-profile/" %}<link rel="stylesheet" href="{% static 'css/business-profile.css' %}?v=2">{% endif %}
   {% if '/locations/' in request.path %}<link rel="stylesheet" href="{% static 'css/business-locations.css' %}?v=3">{% endif %}
@@ -25,6 +26,7 @@
       <a href="/assessments/" class="{% if '/assessments/' in request.path %}active{% endif %}"><span class="nav-icon">✓</span><span>Entrepreneur assessments</span></a>
       <a href="/risks/" class="{% if '/risks/' in request.path %}active{% endif %}"><span class="nav-icon">◫</span><span>Risk register</span></a>
       <a href="/incidents/" class="{% if '/incidents/' in request.path %}active{% endif %}"><span class="nav-icon">!</span><span>Incidents & losses</span></a>
+      <a href="{% url 'billing' %}" class="{% if '/billing/' in request.path %}active{% endif %}"><span class="nav-icon">◎</span><span>Plan & billing</span></a>
       <details class="nav-more" {% if '/assets/' in request.path or '/scenarios/' in request.path or '/management/' in request.path or '/assurance/' in request.path or '/governance/' in request.path or '/intelligence/' in request.path or '/risk-bot/' in request.path or '/reports/' in request.path or '/integrations/' in request.path or '/admin/' in request.path %}open{% endif %}>
         <summary><span class="nav-icon">⋯</span><span>Additional tools</span></summary>
         <div class="nav-more-items">

@@ -12,6 +12,8 @@ from .models import (
     ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy,
     IntegrationConnection, ApiCredential, IntegrationEvent, WebhookEndpoint,
     RiskBotPolicy, RiskBotTransaction, RiskBotAlert,
+    BillingConfiguration, KermsPayment, OrganizationSubscription,
+    SubscriptionPlan,
 )
 
 
@@ -69,6 +71,7 @@ class RiskAppetiteAdmin(admin.ModelAdmin):
 @admin.register(Organization)
 class OrganizationAdmin(admin.ModelAdmin):
     list_display = ("name", "code")
+    search_fields = ("name", "code")
 
 
 @admin.register(Location)
@@ -116,6 +119,119 @@ admin.site.register(IntegrationConnection)
 admin.site.register(ApiCredential)
 admin.site.register(IntegrationEvent)
 admin.site.register(WebhookEndpoint)
+
+
+@admin.register(SubscriptionPlan)
+class SubscriptionPlanAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "code",
+        "is_active",
+        "is_premium",
+        "monthly_price",
+        "annual_price",
+        "seat_limit",
+        "location_limit",
+        "active_risk_limit",
+    )
+    list_filter = ("is_active", "is_premium")
+    search_fields = ("name", "code")
+    fieldsets = (
+        (None, {"fields": ("code", "name", "description", "is_active", "is_premium")}),
+        ("Pricing", {"fields": ("monthly_price", "annual_price")}),
+        (
+            "Usage limits (0 means unlimited)",
+            {"fields": ("seat_limit", "location_limit", "active_risk_limit")},
+        ),
+        (
+            "Features",
+            {
+                "fields": (
+                    "business_profile_enabled",
+                    "locations_enabled",
+                    "assessments_enabled",
+                    "risk_register_enabled",
+                    "incidents_enabled",
+                    "reports_enabled",
+                    "assets_enabled",
+                    "scenarios_enabled",
+                    "management_enabled",
+                    "assurance_enabled",
+                    "governance_enabled",
+                    "intelligence_enabled",
+                    "integrations_enabled",
+                    "risk_bot_enabled",
+                )
+            },
+        ),
+    )
+    readonly_fields = ("created_at", "updated_at")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(OrganizationSubscription)
+class OrganizationSubscriptionAdmin(admin.ModelAdmin):
+    list_display = (
+        "organization",
+        "plan",
+        "status",
+        "billing_cycle",
+        "onboarding_paid",
+        "current_period_end",
+    )
+    list_filter = ("plan", "status", "billing_cycle")
+    search_fields = ("organization__name", "organization__code")
+    autocomplete_fields = ("organization", "plan", "onboarding_fee_waived_by")
+    readonly_fields = ("created_at", "updated_at")
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(KermsPayment)
+class KermsPaymentAdmin(admin.ModelAdmin):
+    list_display = (
+        "organization",
+        "purpose",
+        "amount",
+        "status",
+        "mpesa_receipt_number",
+        "created_at",
+    )
+    list_filter = ("purpose", "status", "billing_cycle")
+    search_fields = (
+        "organization__name",
+        "organization__code",
+        "phone_number",
+        "mpesa_receipt_number",
+        "checkout_request_id",
+    )
+    readonly_fields = tuple(field.name for field in KermsPayment._meta.fields)
+    autocomplete_fields = ("organization", "subscription", "plan", "initiated_by")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(BillingConfiguration)
+class BillingConfigurationAdmin(admin.ModelAdmin):
+    list_display = ("onboarding_fee", "default_grace_period_days", "updated_at")
+    readonly_fields = ("updated_by", "updated_at")
+
+    def has_add_permission(self, request):
+        return not BillingConfiguration.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(RiskBotPolicy)

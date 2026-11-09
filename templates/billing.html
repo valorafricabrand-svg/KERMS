@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Plan & billing | KERMS{% endblock %}
+{% block eyebrow %}Workspace access{% endblock %}
+{% block heading %}Plan & billing{% endblock %}
+{% block content %}
+<section class="billing-page">
+  {% if organization %}
+    <header class="billing-intro">
+      <div>
+        <p class="billing-kicker">KERMS for {{ organization.name }}</p>
+        <h2>Risk management that grows with your business.</h2>
+        {% if not subscription.onboarding_paid %}
+          <p>Your workspace is read-only until the one-time onboarding fee is paid. Your existing information remains available.</p>
+        {% elif not subscription.allows_writes %}
+          <p>Your workspace is currently read-only. Renew your subscription to restore editing.</p>
+        {% else %}
+          <p>Your workspace is active. Review your plan and upgrade when your business needs more capacity.</p>
+        {% endif %}
+      </div>
+      <div class="billing-current">
+        <span>Current plan</span>
+        <strong>{{ subscription.plan.name }}</strong>
+        <span class="billing-status">{{ subscription.effective_status_label }}</span>
+      </div>
+    </header>
+
+    <div class="billing-grid">
+      <article class="billing-card">
+        <span class="billing-step">01 · Get started</span>
+        <h3>One-time onboarding</h3>
+        <p>Unlock Starter features, create your business profile, map a site, assess your exposure and manage key risks.</p>
+        <strong class="billing-price">KES {{ onboarding_fee|floatformat:0 }} <small>once per business</small></strong>
+        {% if subscription.onboarding_paid %}
+          <p class="billing-confirmed">Onboarding complete{% if subscription.onboarding_fee_paid_at %} · {{ subscription.onboarding_fee_paid_at|date:"j M Y" }}{% else %} · fee waived{% endif %}</p>
+        {% elif can_manage %}
+          <form method="post" class="billing-form">
+            {% csrf_token %}
+            <input type="hidden" name="organization" value="{{ organization.pk }}">
+            <input type="hidden" name="payment_type" value="onboarding">
+            <label for="onboarding-phone">M-Pesa number</label>
+            <input id="onboarding-phone" name="phone_number" type="tel" inputmode="tel" autocomplete="tel" placeholder="0712 345 678" pattern="(?:\+?254|0)?[17][0-9 ]{8,10}" required>
+            <button type="submit">Pay KES {{ onboarding_fee|floatformat:0 }} with M-Pesa</button>
+            <small>A secure STK prompt will appear on your phone. Access unlocks after Safaricom confirms payment.</small>
+          </form>
+        {% else %}
+          <p>Ask your workspace administrator or risk manager to complete onboarding.</p>
+        {% endif %}
+      </article>
+
+      <article class="billing-card billing-premium">
+        <span class="billing-step">02 · Grow with confidence</span>
+        <h3>Premium subscription</h3>
+        <p>Unlock advanced tools for deeper analysis, reporting, assets, scenarios, governance and integrations.</p>
+        {% if subscription.onboarding_paid %}
+          {% if can_manage and premium_plans %}
+            {% for plan in premium_plans %}
+              <form method="post" class="billing-form billing-plan-form">
+                {% csrf_token %}
+                <input type="hidden" name="organization" value="{{ organization.pk }}">
+                <input type="hidden" name="payment_type" value="subscription">
+                <input type="hidden" name="plan" value="{{ plan.pk }}">
+                <label for="premium-phone-{{ plan.pk }}">M-Pesa number</label>
+                <input id="premium-phone-{{ plan.pk }}" name="phone_number" type="tel" inputmode="tel" autocomplete="tel" placeholder="0712 345 678" pattern="(?:\+?254|0)?[17][0-9 ]{8,10}" required>
+                <div class="billing-cycle-options">
+                  {% if plan.monthly_price %}<label><input type="radio" name="billing_cycle" value="monthly" required> Monthly · KES {{ plan.monthly_price|floatformat:0 }}</label>{% endif %}
+                  {% if plan.annual_price %}<label><input type="radio" name="billing_cycle" value="annual" required> Annual · KES {{ plan.annual_price|floatformat:0 }}</label>{% endif %}
+                </div>
+                <button type="submit">Choose Premium</button>
+                <small>Payments are approved by you each term; no automatic M-Pesa deductions.</small>
+              </form>
+            {% endfor %}
+          {% else %}
+            <p>Ask your workspace administrator or risk manager to manage this subscription.</p>
+          {% endif %}
+        {% else %}
+          <p>Complete one-time onboarding first. Then you can choose Premium monthly or annually.</p>
+          <div class="billing-price-pair"><span>Monthly <strong>KES {% for plan in premium_plans %}{{ plan.monthly_price|floatformat:0 }}{% empty %}500{% endfor %}</strong></span><span>Annual <strong>KES {% for plan in premium_plans %}{{ plan.annual_price|floatformat:0 }}{% empty %}5,000{% endfor %}</strong></span></div>
+        {% endif %}
+      </article>
+    </div>
+
+    <section class="billing-included">
+      <h3>Plans designed for Kenyan businesses</h3>
+      <div class="billing-plan-grid">
+        <div><strong>Starter</strong><span>3 team members · 1 site · 5 active risks</span><span>Business profile, assessments and core risk register</span></div>
+        <div><strong>Premium</strong><span>5 team members · 5 sites · unlimited active risks</span><span>Advanced risk tools and configurable features</span></div>
+      </div>
+      <p>Plans and limits are managed by KERMS administrators. Premium renewals require a new M-Pesa approval each term. If a Premium term expires, the workspace remains editable during a 7-day grace period, then becomes read-only.</p>
+    </section>
+
+    {% if payments %}
+      <section class="billing-history">
+        <h3>Recent payment requests</h3>
+        <div class="billing-table-wrap"><table>
+          <thead><tr><th>Date</th><th>Payment</th><th>Amount</th><th>Status</th><th>M-Pesa receipt</th></tr></thead>
+          <tbody>{% for payment in payments %}<tr>
+            <td>{{ payment.created_at|date:"j M Y, H:i" }}</td>
+            <td>{{ payment.get_purpose_display }}{% if payment.billing_cycle %} · {{ payment.get_billing_cycle_display }}{% endif %}</td>
+            <td>KES {{ payment.amount|floatformat:0 }}</td>
+            <td>{{ payment.get_status_display }}</td>
+            <td>{{ payment.mpesa_receipt_number|default:"—" }}</td>
+          </tr>{% endfor %}</tbody>
+        </table></div>
+      </section>
+    {% endif %}
+  {% else %}
+    <div class="billing-empty"><h2>No business workspace is linked to your account.</h2><p>Ask a KERMS administrator to set up your organization before managing billing.</p></div>
+  {% endif %}
+</section>
+{% endblock %}

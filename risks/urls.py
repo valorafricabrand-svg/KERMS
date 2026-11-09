@@ -18,6 +18,8 @@ urlpatterns = [
         name="logout",
     ),
     path("dashboard/", views.dashboard, name="dashboard"),
+    path("billing/", views.billing, name="billing"),
+    path("payments/daraja/callback/", views.daraja_callback, name="daraja_callback"),
     path("risk-bot/", views.risk_bot_dashboard, name="risk_bot_dashboard"),
     path("business-profile/", views.business_profile, name="business_profile"),
     path("locations/", views.business_locations, name="business_locations"),

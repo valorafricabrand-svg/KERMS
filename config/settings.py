@@ -55,6 +55,7 @@ MIDDLEWARE = [
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    "risks.billing_middleware.BillingAccessMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
@@ -144,6 +145,16 @@ STORAGES = {
 }
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/dashboard/"
+
+DARAJA_ENVIRONMENT = os.getenv("DARAJA_ENVIRONMENT", "sandbox").strip().lower()
+DARAJA_CONSUMER_KEY = os.getenv("DARAJA_CONSUMER_KEY", "")
+DARAJA_CONSUMER_SECRET = os.getenv("DARAJA_CONSUMER_SECRET", "")
+DARAJA_SHORTCODE = os.getenv("DARAJA_SHORTCODE", "")
+DARAJA_PASSKEY = os.getenv("DARAJA_PASSKEY", "")
+DARAJA_CALLBACK_URL = os.getenv("DARAJA_CALLBACK_URL", "")
+DARAJA_TRANSACTION_TYPE = os.getenv(
+    "DARAJA_TRANSACTION_TYPE", "CustomerPayBillOnline"
+)
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"

@@ -1,17 +1,21 @@
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
 from django.utils.dateparse import parse_datetime
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST
+import calendar
 import hashlib
+import json
+import logging
 import secrets
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
@@ -42,6 +46,7 @@ from .models import (
     AssetDependency,
     AssuranceTest,
     BusinessProfile,
+    BillingConfiguration,
     BusinessUnit,
     ComplianceFramework,
     ComplianceMapping,
@@ -60,6 +65,9 @@ from .models import (
     ManagementTransitionRiskReview,
     Organization,
     OrganizationMembership,
+    OrganizationSubscription,
+    KermsPayment,
+    SubscriptionPlan,
     Portfolio,
     Risk,
     RiskAssessment,
@@ -77,6 +85,15 @@ from .asset_forms import AssetForm, DependencyForm, LocationForm, SupplierForm
 from .assessment_questions import ASSESSMENT_SECTIONS, RESPONSE_CHOICES
 from .scenario_library import SCENARIO_TEMPLATES, get_scenario_template
 from .site_risk_prompts import site_risk_prompts
+from .daraja import (
+    DarajaError,
+    initiate_stk_push,
+    normalize_phone_number,
+    query_stk_push,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 def user_organizations(request):
@@ -94,16 +111,370 @@ def organization_role(user, organization):
 
 
 @login_required
+def billing(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(
+            pk=request.POST.get("organization") or request.GET.get("organization")
+        ).first()
+        or organizations.first()
+    )
+    if not organization:
+        return render(
+            request,
+            "billing.html",
+            {"organizations": organizations, "organization": None},
+        )
+
+    subscription = getattr(organization, "subscription", None)
+    if subscription is None:
+        subscription = OrganizationSubscription.objects.create(
+            organization=organization,
+            plan=SubscriptionPlan.objects.get(code="starter"),
+            status=OrganizationSubscription.Status.ONBOARDING_DUE,
+            grace_period_days=7,
+        )
+    config = BillingConfiguration.objects.filter(pk=1).first()
+    onboarding_fee = config.onboarding_fee if config else Decimal("500.00")
+    premium_plans = SubscriptionPlan.objects.filter(is_active=True, is_premium=True)
+    can_manage = organization_role(request.user, organization) in {
+        OrganizationMembership.Role.ADMIN,
+        OrganizationMembership.Role.RISK_MANAGER,
+    }
+
+    if request.method == "POST":
+        if not can_manage:
+            raise PermissionDenied
+        if KermsPayment.objects.filter(
+            organization=organization,
+            status=KermsPayment.Status.PENDING,
+            created_at__gte=timezone.now() - timedelta(minutes=20),
+        ).exists():
+            messages.info(
+                request,
+                "A payment request is already awaiting confirmation. Check the phone used for the M-Pesa prompt.",
+            )
+            return redirect(f"/billing/?organization={organization.pk}")
+        try:
+            phone_number = normalize_phone_number(request.POST.get("phone_number", ""))
+            payment_type = request.POST.get("payment_type")
+            if payment_type == KermsPayment.Purpose.ONBOARDING:
+                if subscription.onboarding_paid:
+                    raise DarajaError("The onboarding fee has already been paid or waived.")
+                amount = onboarding_fee
+                plan = None
+                billing_cycle = ""
+            elif payment_type == KermsPayment.Purpose.SUBSCRIPTION:
+                if not subscription.onboarding_paid:
+                    raise DarajaError("Pay the one-time onboarding fee before subscribing.")
+                plan = premium_plans.filter(pk=request.POST.get("plan")).first()
+                billing_cycle = request.POST.get("billing_cycle")
+                if not plan:
+                    raise DarajaError("Select an available Premium plan.")
+                if billing_cycle == OrganizationSubscription.BillingCycle.MONTHLY:
+                    amount = plan.monthly_price
+                elif billing_cycle == OrganizationSubscription.BillingCycle.ANNUAL:
+                    amount = plan.annual_price
+                else:
+                    raise DarajaError("Select a valid billing cycle.")
+                if amount is None or amount <= 0:
+                    raise DarajaError("This plan is not configured for that billing cycle.")
+            else:
+                raise DarajaError("Select a valid payment type.")
+            if amount <= 0:
+                raise DarajaError("The payment amount must be greater than zero.")
+            if amount != amount.to_integral_value():
+                raise DarajaError("The amount must be a whole number of Kenyan shillings.")
+            payment = KermsPayment.objects.create(
+                organization=organization,
+                subscription=subscription,
+                purpose=payment_type,
+                plan=plan,
+                billing_cycle=billing_cycle,
+                amount=amount,
+                phone_number=phone_number,
+                initiated_by=request.user,
+            )
+            try:
+                stk_response = initiate_stk_push(payment, f"KERMS{payment.pk}")
+            except DarajaError as exc:
+                payment.status = KermsPayment.Status.FAILED
+                payment.provider_result_description = str(exc)[:255]
+                payment.save(
+                    update_fields=[
+                        "status",
+                        "provider_result_description",
+                        "updated_at",
+                    ]
+                )
+                raise
+            payment.checkout_request_id = stk_response["CheckoutRequestID"]
+            payment.merchant_request_id = stk_response.get("MerchantRequestID", "")
+            payment.provider_result_description = stk_response.get(
+                "CustomerMessage", "Payment prompt sent to your phone."
+            )[:255]
+            payment.save(
+                update_fields=[
+                    "checkout_request_id",
+                    "merchant_request_id",
+                    "provider_result_description",
+                    "updated_at",
+                ]
+            )
+            messages.success(
+                request,
+                "An M-Pesa payment prompt has been sent. Approve it on your phone to activate access.",
+            )
+            return redirect(f"/billing/?organization={organization.pk}")
+        except DarajaError as exc:
+            messages.error(request, str(exc))
+
+    payments = KermsPayment.objects.filter(organization=organization)[:10]
+    return render(
+        request,
+        "billing.html",
+        {
+            "organizations": organizations,
+            "organization": organization,
+            "subscription": subscription,
+            "onboarding_fee": onboarding_fee,
+            "premium_plans": premium_plans,
+            "payments": payments,
+            "can_manage": can_manage,
+        },
+    )
+
+
+def _callback_value(items, name):
+    return next(
+        (item.get("Value") for item in items if item.get("Name") == name),
+        None,
+    )
+
+
+def _add_months(value, months):
+    month_index = value.month - 1 + months
+    year = value.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def _update_pending_payment(payment_id, updates):
+    with transaction.atomic():
+        payment = KermsPayment.objects.select_for_update().get(pk=payment_id)
+        if payment.status == KermsPayment.Status.COMPLETED:
+            return False
+        for field, value in updates.items():
+            setattr(payment, field, value)
+        payment.save(update_fields=[*updates.keys(), "updated_at"])
+    return True
+
+
+@csrf_exempt
+@require_POST
+def daraja_callback(request):
+    try:
+        payload = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"ResultCode": 1, "ResultDesc": "Invalid JSON."}, status=400)
+    if not isinstance(payload, dict) or not isinstance(payload.get("Body"), dict):
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Invalid callback body."}, status=400
+        )
+    callback = payload.get("Body", {}).get("stkCallback", {})
+    if not isinstance(callback, dict):
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Invalid callback data."}, status=400
+        )
+    checkout_id = callback.get("CheckoutRequestID")
+    if not checkout_id:
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Missing checkout reference."},
+            status=400,
+        )
+    payment = KermsPayment.objects.filter(
+        checkout_request_id=checkout_id
+    ).first()
+    if payment is None:
+        logger.warning("Daraja callback for unknown checkout reference.")
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Unknown checkout reference."},
+            status=404,
+        )
+    if payment.status == KermsPayment.Status.COMPLETED:
+        return JsonResponse({"ResultCode": 0, "ResultDesc": "Already processed."})
+    result_code = callback.get("ResultCode")
+    if str(result_code) != "0":
+        _update_pending_payment(
+            payment.pk,
+            {
+                "status": KermsPayment.Status.FAILED,
+                "provider_result_code": str(result_code or "")[:16],
+                "provider_result_description": callback.get(
+                    "ResultDesc", "Payment was not completed."
+                )[:255],
+            },
+        )
+        return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted."})
+
+    callback_metadata = callback.get("CallbackMetadata", {})
+    metadata = (
+        callback_metadata.get("Item", [])
+        if isinstance(callback_metadata, dict)
+        else []
+    )
+    if not isinstance(metadata, list):
+        metadata = []
+    amount_value = _callback_value(metadata, "Amount")
+    phone_value = _callback_value(metadata, "PhoneNumber")
+    receipt = _callback_value(metadata, "MpesaReceiptNumber")
+    try:
+        callback_amount = Decimal(str(amount_value))
+        callback_phone = normalize_phone_number(str(phone_value or ""))
+    except (DarajaError, InvalidOperation):
+        callback_amount = None
+        callback_phone = ""
+    if (
+        callback_amount != payment.amount
+        or callback_phone != payment.phone_number
+        or not receipt
+    ):
+        _update_pending_payment(
+            payment.pk,
+            {
+                "status": KermsPayment.Status.FAILED,
+                "provider_result_description": (
+                    "M-Pesa confirmation did not match the requested amount and phone."
+                ),
+            },
+        )
+        logger.error("Daraja callback metadata mismatch for payment %s.", payment.pk)
+        return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted."})
+    if payment.purpose == KermsPayment.Purpose.SUBSCRIPTION and (
+        not payment.plan_id
+        or payment.billing_cycle
+        not in OrganizationSubscription.BillingCycle.values
+    ):
+        _update_pending_payment(
+            payment.pk,
+            {
+                "status": KermsPayment.Status.FAILED,
+                "provider_result_description": "Subscription payment has invalid plan details.",
+            },
+        )
+        logger.error("Invalid subscription payment details for payment %s.", payment.pk)
+        return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted."})
+    try:
+        query_response = query_stk_push(checkout_id)
+    except DarajaError as exc:
+        logger.warning("Could not verify Daraja payment %s: %s", payment.pk, exc)
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Payment verification is pending."},
+            status=503,
+        )
+    if not isinstance(query_response, dict) or (
+        query_response.get("CheckoutRequestID")
+        and query_response["CheckoutRequestID"] != checkout_id
+    ):
+        logger.error("Daraja query response mismatch for payment %s.", payment.pk)
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Payment verification is pending."},
+            status=503,
+        )
+    if str(query_response.get("ResultCode")) != "0":
+        _update_pending_payment(
+            payment.pk,
+            {
+                "provider_result_code": str(
+                    query_response.get("ResultCode", "")
+                )[:16],
+                "provider_result_description": query_response.get(
+                    "ResultDesc", "Payment has not been confirmed by Daraja."
+                )[:255],
+            },
+        )
+        return JsonResponse(
+            {"ResultCode": 1, "ResultDesc": "Payment verification is pending."},
+            status=503,
+        )
+
+    with transaction.atomic():
+        payment = KermsPayment.objects.select_for_update().get(pk=payment.pk)
+        if payment.status == KermsPayment.Status.COMPLETED:
+            return JsonResponse({"ResultCode": 0, "ResultDesc": "Already processed."})
+        if KermsPayment.objects.filter(mpesa_receipt_number=receipt).exclude(
+            pk=payment.pk
+        ).exists():
+            logger.error("Duplicate Daraja receipt detected for payment %s.", payment.pk)
+            return JsonResponse(
+                {"ResultCode": 1, "ResultDesc": "Duplicate receipt."}, status=409
+            )
+
+        now = timezone.now()
+        payment.status = KermsPayment.Status.COMPLETED
+        payment.mpesa_receipt_number = str(receipt)[:32]
+        payment.provider_result_code = str(query_response.get("ResultCode", "0"))[:16]
+        payment.provider_result_description = query_response.get(
+            "ResultDesc", "Payment verified by Daraja."
+        )[:255]
+        payment.completed_at = now
+        try:
+            with transaction.atomic():
+                payment.save()
+        except IntegrityError:
+            logger.error("Duplicate Daraja receipt detected for payment %s.", payment.pk)
+            return JsonResponse(
+                {"ResultCode": 1, "ResultDesc": "Duplicate receipt."}, status=409
+            )
+        subscription = OrganizationSubscription.objects.select_for_update().get(
+            pk=payment.subscription_id
+        )
+        if payment.purpose == KermsPayment.Purpose.ONBOARDING:
+            subscription.onboarding_fee_paid_at = now
+            subscription.status = OrganizationSubscription.Status.ACTIVE
+        else:
+            period_start = max(
+                now,
+                subscription.current_period_end
+                if subscription.current_period_end
+                and subscription.current_period_end > now
+                else now,
+            )
+            period_months = (
+                12
+                if payment.billing_cycle
+                == OrganizationSubscription.BillingCycle.ANNUAL
+                else 1
+            )
+            subscription.plan = payment.plan
+            subscription.billing_cycle = payment.billing_cycle
+            subscription.current_period_start = period_start
+            subscription.current_period_end = _add_months(
+                period_start, period_months
+            )
+            subscription.status = OrganizationSubscription.Status.ACTIVE
+        subscription.save()
+    return JsonResponse({"ResultCode": 0, "ResultDesc": "Accepted."})
+
+
+@login_required
 def global_search(request):
     query = request.GET.get("q", "").strip()
     organizations = user_organizations(request)
     if not query:
         return render(request, "search_results.html", {"query": "", "risks": [], "assets": [], "locations": [], "suppliers": [], "alerts": []})
+    asset_organizations = organizations.filter(
+        subscription__plan__assets_enabled=True
+    )
+    intelligence_organizations = organizations.filter(
+        subscription__plan__intelligence_enabled=True
+    )
     risk_rows = Risk.objects.filter(organization__in=organizations).filter(Q(title__icontains=query) | Q(reference__icontains=query) | Q(description__icontains=query))[:20]
-    asset_rows = Asset.objects.filter(organization__in=organizations).filter(Q(name__icontains=query) | Q(asset_type__icontains=query))[:20]
+    asset_rows = Asset.objects.filter(organization__in=asset_organizations).filter(Q(name__icontains=query) | Q(asset_type__icontains=query))[:20]
     location_rows = Location.objects.filter(organization__in=organizations).filter(Q(name__icontains=query) | Q(country__icontains=query) | Q(region__icontains=query))[:20]
-    supplier_rows = Supplier.objects.filter(organization__in=organizations).filter(Q(name__icontains=query) | Q(country__icontains=query))[:20]
-    alert_rows = ExternalRiskAlert.objects.filter(organization__in=organizations).filter(Q(title__icontains=query) | Q(summary__icontains=query) | Q(country__icontains=query))[:20]
+    supplier_rows = Supplier.objects.filter(organization__in=asset_organizations).filter(Q(name__icontains=query) | Q(country__icontains=query))[:20]
+    alert_rows = ExternalRiskAlert.objects.filter(organization__in=intelligence_organizations).filter(Q(title__icontains=query) | Q(summary__icontains=query) | Q(country__icontains=query))[:20]
     return render(request, "search_results.html", {"query": query, "risks": risk_rows, "assets": asset_rows, "locations": location_rows, "suppliers": supplier_rows, "alerts": alert_rows})
 
 
@@ -481,9 +852,13 @@ def dashboard(request):
     priority_risks.sort(key=lambda risk: risk.residual_score, reverse=True)
 
     today = timezone.localdate()
+    risk_bot_enabled = bool(
+        organization
+        and organization.subscription.plan.risk_bot_enabled
+    )
     policy = (
         RiskBotPolicy.objects.filter(organization=organization).first()
-        if organization
+        if risk_bot_enabled
         else None
     )
     business_profile_record = (
@@ -559,7 +934,7 @@ def dashboard(request):
         RiskBotAlert.objects.filter(
             organization=organization, status=RiskBotAlert.Status.NEW
         ).select_related("risk", "transaction")
-        if organization
+        if risk_bot_enabled
         else RiskBotAlert.objects.none()
     )
     open_incidents = (
@@ -1368,6 +1743,17 @@ def _bot_api_organization(request):
         credential.expires_at and credential.expires_at <= timezone.now()
     ):
         return None, JsonResponse({"error": "Invalid or expired API credential."}, status=401)
+    subscription = getattr(credential.organization, "subscription", None)
+    if not subscription or not subscription.plan.risk_bot_enabled:
+        return None, JsonResponse(
+            {"error": "The risk monitoring bot is not included in this plan."},
+            status=403,
+        )
+    if request.method == "POST" and not subscription.allows_writes():
+        return None, JsonResponse(
+            {"error": "This workspace is read-only until billing is active."},
+            status=403,
+        )
     credential.last_used_at = timezone.now()
     credential.save(update_fields=["last_used_at"])
     return credential.organization, None
