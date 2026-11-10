@@ -34,6 +34,17 @@ be configured for a production deployment. The default local database is
 `data/riskregister.sqlite3`. Never commit `.env`, database files, uploaded
 files, or credentials.
 
+### Render deployment
+
+When deploying with the repository Dockerfile, configure the required Django
+and PostgreSQL environment variables in Render. Connect to the database using
+its internal connection details and set `DB_SSLMODE=require`. The container
+startup applies database migrations, collects the static-file manifest, then
+starts Gunicorn on Render's assigned `PORT` (falling back to port 10000).
+Ensure Render is deploying the latest commit containing the Dockerfile change;
+if the service uses Render's native Python runtime instead of Docker, configure
+the equivalent build and start commands in the service settings.
+
 ## Plans, onboarding, and M-Pesa billing
 
 New organization workspaces start on Starter in read-only mode. Members can
