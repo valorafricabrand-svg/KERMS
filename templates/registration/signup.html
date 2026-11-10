@@ -1,0 +1,79 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>Create account | KERMS.CO.KE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=1">
+</head>
+<body class="auth-page">
+  <a class="site-skip-link" href="#sign-up-form">Skip to create account</a>
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+    <a class="auth-home-link" href="{% url 'home' %}">Back to home</a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <section class="auth-card" aria-labelledby="sign-up-title">
+      <span class="auth-kicker">Create your workspace</span>
+      <h1 id="sign-up-title">Set up a KERMS account.</h1>
+      <p class="auth-intro">Create your own business workspace and start capturing the context that matters to your decisions.</p>
+      {% if form.non_field_errors %}
+      <div class="auth-error" role="alert">{{ form.non_field_errors }}</div>
+      {% endif %}
+      <form method="post" id="sign-up-form">
+        {% csrf_token %}
+        <div class="auth-two-column">
+          <div>
+            <label for="{{ form.first_name.id_for_label }}">{{ form.first_name.label }}</label>
+            {{ form.first_name }}
+            {% if form.first_name.errors %}<div class="auth-field-error">{{ form.first_name.errors }}</div>{% endif %}
+          </div>
+          <div>
+            <label for="{{ form.last_name.id_for_label }}">{{ form.last_name.label }}</label>
+            {{ form.last_name }}
+            {% if form.last_name.errors %}<div class="auth-field-error">{{ form.last_name.errors }}</div>{% endif %}
+          </div>
+        </div>
+
+        <label for="{{ form.username.id_for_label }}">{{ form.username.label }}</label>
+        {{ form.username }}
+        {% if form.username.errors %}<div class="auth-field-error">{{ form.username.errors }}</div>{% endif %}
+
+        <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+        {{ form.email }}
+        {% if form.email.errors %}<div class="auth-field-error">{{ form.email.errors }}</div>{% endif %}
+
+        <label for="{{ form.password1.id_for_label }}">{{ form.password1.label }}</label>
+        {{ form.password1 }}
+        {% if form.password1.errors %}<div class="auth-field-error">{{ form.password1.errors }}</div>{% endif %}
+
+        <label for="{{ form.password2.id_for_label }}">{{ form.password2.label }}</label>
+        {{ form.password2 }}
+        {% if form.password2.errors %}<div class="auth-field-error">{{ form.password2.errors }}</div>{% endif %}
+
+        <label for="{{ form.organization_name.id_for_label }}">{{ form.organization_name.label }}</label>
+        {{ form.organization_name }}
+        {% if form.organization_name.errors %}<div class="auth-field-error">{{ form.organization_name.errors }}</div>{% endif %}
+
+        <label for="{{ form.organization_code.id_for_label }}">{{ form.organization_code.label }}</label>
+        {{ form.organization_code }}
+        {% if form.organization_code.errors %}<div class="auth-field-error">{{ form.organization_code.errors }}</div>{% endif %}
+
+        <button class="auth-submit" type="submit">Create workspace <span aria-hidden="true">→</span></button>
+      </form>
+      <p class="auth-help">Already have access? <a href="{% url 'login' %}">Sign in instead</a>.</p>
+      <a class="auth-footer-link" href="{% url 'home' %}">← Return to KERMS.CO.KE</a>
+    </section>
+    <p class="auth-assurance">KERMS supports informed business decisions. It does not certify that a business is safe or risk-free.</p>
+  </main>
+</body>
+</html>

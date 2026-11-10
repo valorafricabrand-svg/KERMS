@@ -411,6 +411,29 @@ class RiskPlatformTests(TestCase):
         response = self.client.get(reverse("business_profile"))
         self.assertEqual(response.status_code, 302)
 
+    def test_signup_creates_workspace_and_admin_membership(self):
+        response = self.client.post(
+            reverse("signup"),
+            {
+                "first_name": "Ada",
+                "last_name": "Mwangi",
+                "username": "ada",
+                "email": "ada@example.com",
+                "password1": "StrongPass!123",
+                "password2": "StrongPass!123",
+                "organization_name": "Ada Retail Group",
+                "organization_code": "ADA-RETAIL",
+            },
+        )
+
+        self.assertRedirects(response, reverse("dashboard"))
+        user = get_user_model().objects.get(username="ada")
+        organization = Organization.objects.get(code="ADA-RETAIL")
+        membership = OrganizationMembership.objects.get(user=user, organization=organization)
+        self.assertEqual(membership.role, OrganizationMembership.Role.ADMIN)
+        self.assertTrue(user.check_password("StrongPass!123"))
+        self.assertEqual(organization.name, "Ada Retail Group")
+
     def test_business_profile_is_a_guided_scoped_self_assessment(self):
         self.client.force_login(self.user)
         url = f"{reverse('business_profile')}?organization={self.organization.pk}"

@@ -17,6 +17,7 @@ urlpatterns = [
         auth_views.LogoutView.as_view(next_page="home"),
         name="logout",
     ),
+    path("signup/", views.signup, name="signup"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path("billing/", views.billing, name="billing"),
     path("payments/daraja/callback/", views.daraja_callback, name="daraja_callback"),

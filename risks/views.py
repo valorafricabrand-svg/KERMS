@@ -1,5 +1,6 @@
-from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.contrib.auth import get_user_model, login
+from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
@@ -25,6 +26,7 @@ from .forms import (
     AssuranceTestForm,
     BusinessProfileForm,
     EntrepreneurAssessmentForm,
+    SignUpForm,
     EntrepreneurAssessmentReviewForm,
     FrameworkForm,
     FrameworkRequirementForm,
@@ -823,6 +825,36 @@ def entrepreneur_assessment_detail(request, pk):
             ),
         },
     )
+
+
+def signup(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+
+    form = SignUpForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        User = get_user_model()
+        user = User.objects.create_user(
+            username=form.cleaned_data["username"],
+            email=form.cleaned_data["email"],
+            password=form.cleaned_data["password1"],
+            first_name=form.cleaned_data["first_name"].strip(),
+            last_name=form.cleaned_data["last_name"].strip(),
+        )
+        organization = Organization.objects.create(
+            name=form.cleaned_data["organization_name"].strip(),
+            code=form.cleaned_data["organization_code"],
+        )
+        OrganizationMembership.objects.create(
+            user=user,
+            organization=organization,
+            role=OrganizationMembership.Role.ADMIN,
+        )
+        login(request, user)
+        messages.success(request, "Your workspace is ready. Welcome to KERMS.")
+        return redirect("dashboard")
+
+    return render(request, "registration/signup.html", {"form": form})
 
 
 @login_required

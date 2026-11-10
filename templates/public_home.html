@@ -26,6 +26,7 @@
       <a class="site-nav-cta" href="{% url 'dashboard' %}">Open platform <span aria-hidden="true">↗</span></a>
       {% else %}
       <a href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in</a>
+      <a href="{% url 'signup' %}">Create account</a>
       {% endif %}
     </nav>
   </header>
@@ -40,7 +41,8 @@
           {% if request.user.is_authenticated %}
           <a class="site-button site-button-primary" href="{% url 'dashboard' %}">Open your workspace <span aria-hidden="true">→</span></a>
           {% else %}
-          <a class="site-button site-button-primary" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
+          <a class="site-button site-button-primary" href="{% url 'signup' %}">Create your workspace <span aria-hidden="true">→</span></a>
+          <a class="site-button site-button-secondary" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS</a>
           {% endif %}
           <a class="site-button site-button-secondary" href="#how-it-works">See how it works</a>
         </div>

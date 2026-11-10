@@ -1,9 +1,77 @@
+import re
 from django import forms
 from datetime import date
 from collections import OrderedDict
 
 from .assessment_questions import ASSESSMENT_QUESTION_KEYS, ASSESSMENT_SECTIONS, RESPONSE_CHOICES
-from .models import BusinessProfile, EntrepreneurAssessment, Location, Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition
+from .models import BusinessProfile, EntrepreneurAssessment, Location, Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition, Organization
+
+
+class SignUpForm(forms.Form):
+    first_name = forms.CharField(max_length=30, required=False, label="First name")
+    last_name = forms.CharField(max_length=30, required=False, label="Last name")
+    username = forms.CharField(max_length=150, label="Username")
+    email = forms.EmailField(label="Email address")
+    password1 = forms.CharField(
+        widget=forms.PasswordInput,
+        strip=False,
+        label="Password",
+    )
+    password2 = forms.CharField(
+        widget=forms.PasswordInput,
+        strip=False,
+        label="Confirm password",
+    )
+    organization_name = forms.CharField(max_length=160, label="Business workspace name")
+    organization_code = forms.CharField(max_length=20, label="Workspace code")
+
+    def clean_username(self):
+        username = self.cleaned_data["username"].strip()
+        if not username:
+            raise forms.ValidationError("Choose a username.")
+        if username.lower() == "admin":
+            raise forms.ValidationError("This username is reserved.")
+        return username
+
+    def clean_email(self):
+        email = self.cleaned_data["email"].strip()
+        if "@" not in email:
+            raise forms.ValidationError("Enter a valid email address.")
+        return email
+
+    def clean_organization_code(self):
+        code = self.cleaned_data["organization_code"].strip()
+        if not code:
+            raise forms.ValidationError("Enter a short workspace code.")
+        normalized = re.sub(r"[^A-Za-z0-9_-]", "", code).upper()
+        if normalized != code.upper():
+            raise forms.ValidationError("Use letters, numbers, hyphens, or underscores only.")
+        if Organization.objects.filter(code__iexact=normalized).exists():
+            raise forms.ValidationError("This workspace code is already in use.")
+        return normalized
+
+    def clean(self):
+        cleaned_data = super().clean()
+        password1 = cleaned_data.get("password1")
+        password2 = cleaned_data.get("password2")
+        if password1 and password2 and password1 != password2:
+            self.add_error("password2", "Passwords do not match.")
+
+        username = cleaned_data.get("username")
+        email = cleaned_data.get("email")
+        if username and email:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            if User.objects.filter(username__iexact=username).exists():
+                self.add_error("username", "This username is already taken.")
+            if User.objects.filter(email__iexact=email).exists():
+                self.add_error("email", "An account with this email already exists.")
+
+        organization_name = cleaned_data.get("organization_name")
+        if organization_name and Organization.objects.filter(name__iexact=organization_name.strip()).exists():
+            self.add_error("organization_name", "This workspace name is already in use.")
+
+        return cleaned_data
 
 
 class BusinessProfileForm(forms.ModelForm):
