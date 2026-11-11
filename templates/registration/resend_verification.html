@@ -1,0 +1,36 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>Resend verification | KERMS.CO.KE</title>
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=2">
+</head>
+<body class="auth-page">
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <section class="auth-card" aria-labelledby="resend-title">
+      <span class="auth-kicker">Email verification</span>
+      <h1 id="resend-title">Request a new link.</h1>
+      <p class="auth-intro">Enter the email address used to create your account. If it has an unverified account, we’ll send a new link.</p>
+      {% if rate_limited %}<div class="auth-error" role="alert">Too many attempts. Please wait before trying again.</div>{% endif %}
+      <form method="post">
+        {% csrf_token %}
+        <label for="{{ form.email.id_for_label }}">{{ form.email.label }}</label>
+        {{ form.email }}
+        {% if form.email.errors %}<div class="auth-field-error">{{ form.email.errors }}</div>{% endif %}
+        <button class="auth-submit" type="submit">Send verification link <span aria-hidden="true">→</span></button>
+      </form>
+      <a class="auth-footer-link" href="{% url 'login' %}">Return to sign in</a>
+    </section>
+  </main>
+</body>
+</html>

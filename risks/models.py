@@ -110,6 +110,25 @@ class OrganizationMembership(models.Model):
             )
 
 
+class SignupConsent(models.Model):
+    user = models.OneToOneField(
+        "auth.User", on_delete=models.CASCADE, related_name="signup_consent"
+    )
+    terms_version = models.CharField(max_length=32)
+    privacy_version = models.CharField(max_length=32)
+    accepted_at = models.DateTimeField(default=timezone.now)
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Signup consent - {self.user}"
+
+
+class SignupRateLimit(models.Model):
+    key = models.CharField(max_length=64, primary_key=True)
+    window_started_at = models.DateTimeField(db_index=True)
+    request_count = models.PositiveSmallIntegerField(default=0)
+
+
 class SubscriptionPlan(models.Model):
     code = models.SlugField(max_length=32, unique=True)
     name = models.CharField(max_length=80)

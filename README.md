@@ -45,6 +45,46 @@ Ensure Render is deploying the latest commit containing the Dockerfile change;
 if the service uses Render's native Python runtime instead of Docker, configure
 the equivalent build and start commands in the service settings.
 
+Production deployments must configure a real email provider (`EMAIL_HOST`,
+`DEFAULT_FROM_EMAIL`, and provider credentials as needed) and set
+`DJANGO_PUBLIC_BASE_URL` to the canonical HTTPS origin used in email links.
+Django refuses to start in production with the development console email
+backend or without that HTTPS origin. Public workspace registration is
+disabled outside development by default; enable it only after email delivery
+and the policy notices have been reviewed:
+
+```text
+DJANGO_PUBLIC_SIGNUP_ENABLED=True
+DJANGO_PUBLIC_BASE_URL=https://your-domain.example
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=your-provider-smtp-host
+EMAIL_PORT=587
+EMAIL_HOST_USER=your-provider-user
+EMAIL_HOST_PASSWORD=your-provider-password
+EMAIL_USE_TLS=True
+DEFAULT_FROM_EMAIL=accounts@your-domain
+```
+
+## Secure account creation
+
+When enabled, self-service registration creates an inactive account and a
+workspace administrator membership, then sends a single-use email-verification
+link that expires after three days. A database-backed limit allows five
+registration or resend attempts per source IP and per email address per hour;
+a honeypot field silently discards basic automated
+submissions. Ensure the trusted ingress configures `REMOTE_ADDR` as the real
+client address; KERMS intentionally does not trust a caller-supplied
+`X-Forwarded-For` header. Passwords must be at least 12 characters and are
+checked against Django's configured validators. Terms acceptance is required
+and its version and timestamp are recorded with the account.
+
+Production registration is invitation-only by default. Administrators can
+provision users and organization memberships through Django admin. The signup
+form and policies are an initial service notice, not a substitute for complete
+operator contact details and legal review. Multi-factor authentication,
+organization invitations, and advanced bot detection should be added before
+enterprise onboarding.
+
 ## Plans, onboarding, and M-Pesa billing
 
 New organization workspaces start on Starter in read-only mode. Members can

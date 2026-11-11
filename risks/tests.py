@@ -2,9 +2,12 @@ import hashlib
 import json
 from datetime import timedelta
 from decimal import Decimal
+from urllib.parse import urlsplit
+from smtplib import SMTPException
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -27,6 +30,7 @@ from .models import (
     RiskBotTransaction,
     RiskAssessment,
     RiskTreatment,
+    SignupConsent,
     StressScenario,
     SubscriptionPlan,
     KermsPayment,
@@ -411,7 +415,8 @@ class RiskPlatformTests(TestCase):
         response = self.client.get(reverse("business_profile"))
         self.assertEqual(response.status_code, 302)
 
-    def test_signup_creates_workspace_and_admin_membership(self):
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_signup_requires_email_verification_before_account_access(self):
         response = self.client.post(
             reverse("signup"),
             {
@@ -423,16 +428,174 @@ class RiskPlatformTests(TestCase):
                 "password2": "StrongPass!123",
                 "organization_name": "Ada Retail Group",
                 "organization_code": "ADA-RETAIL",
+                "terms_accepted": "on",
             },
         )
 
-        self.assertRedirects(response, reverse("dashboard"))
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, "registration/verification_pending.html")
         user = get_user_model().objects.get(username="ada")
         organization = Organization.objects.get(code="ADA-RETAIL")
         membership = OrganizationMembership.objects.get(user=user, organization=organization)
         self.assertEqual(membership.role, OrganizationMembership.Role.ADMIN)
         self.assertTrue(user.check_password("StrongPass!123"))
+        self.assertFalse(user.is_active)
+        self.assertFalse(response.wsgi_request.user.is_authenticated)
         self.assertEqual(organization.name, "Ada Retail Group")
+        self.assertEqual(user.signup_consent.terms_version, "2026-11-11-v1")
+        self.assertEqual(user.signup_consent.privacy_version, "2026-11-11-v1")
+        self.assertEqual(len(mail.outbox), 1)
+
+        login_attempt = self.client.post(
+            reverse("login"),
+            {"username": "ada", "password": "StrongPass!123"},
+        )
+        self.assertEqual(login_attempt.status_code, 200)
+        self.assertFalse(login_attempt.wsgi_request.user.is_authenticated)
+
+        verify_url = next(
+            line.strip()
+            for line in mail.outbox[0].body.splitlines()
+            if "/verify-email/" in line
+        )
+        verify_path = urlsplit(verify_url).path
+        confirmation = self.client.get(verify_path)
+        self.assertEqual(confirmation.status_code, 200)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+
+        verified = self.client.post(verify_path)
+
+        self.assertRedirects(verified, reverse("dashboard"))
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertIsNotNone(user.signup_consent.verified_at)
+        self.assertTrue(verified.wsgi_request.user.is_authenticated)
+        reused_link = self.client.post(verify_path)
+        self.assertEqual(reused_link.status_code, 400)
+
+    def test_signup_requires_terms_and_a_validated_password(self):
+        response = self.client.post(
+            reverse("signup"),
+            {
+                "username": "weak-password-user",
+                "email": "weak@example.com",
+                "password1": "password",
+                "password2": "password",
+                "organization_name": "Weak Password Workspace",
+                "organization_code": "WEAK-PASSWORD",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(get_user_model().objects.filter(username="weak-password-user").exists())
+        self.assertContains(response, "This password is too common")
+        self.assertContains(response, "This field is required")
+
+    def test_signup_honeypot_discards_automated_submission(self):
+        response = self.client.post(
+            reverse("signup"),
+            {
+                "username": "robot",
+                "email": "robot@example.com",
+                "password1": "StrongPass!123",
+                "password2": "StrongPass!123",
+                "organization_name": "Robot Workspace",
+                "organization_code": "ROBOT",
+                "terms_accepted": "on",
+                "website": "filled by bot",
+            },
+        )
+
+        self.assertTemplateUsed(response, "registration/verification_pending.html")
+        self.assertFalse(get_user_model().objects.filter(username="robot").exists())
+
+    def test_signup_limits_attempts_per_client_address(self):
+        for _ in range(5):
+            self.client.post(reverse("signup"), {}, REMOTE_ADDR="192.0.2.18")
+
+        response = self.client.post(
+            reverse("signup"), {}, REMOTE_ADDR="192.0.2.18"
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(response, "Too many attempts", status_code=429)
+
+    def test_signup_limits_verification_resends_per_email(self):
+        for index in range(5):
+            self.client.post(
+                reverse("resend_verification"),
+                {"email": "target@example.com"},
+                REMOTE_ADDR=f"192.0.2.{index + 1}",
+            )
+
+        response = self.client.post(
+            reverse("resend_verification"),
+            {"email": "target@example.com"},
+            REMOTE_ADDR="192.0.2.20",
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertContains(response, "Too many attempts", status_code=429)
+
+    @override_settings(PUBLIC_SIGNUP_ENABLED=False)
+    def test_public_signup_can_be_disabled_for_invitation_only_deployments(self):
+        response = self.client.get(reverse("signup"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Registration is by invitation")
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @patch("risks.views.send_mail", side_effect=SMTPException("mail unavailable"))
+    def test_signup_rolls_back_account_when_verification_email_fails(self, send_mail_mock):
+        with self.assertLogs("risks.views", level="ERROR"):
+            response = self.client.post(
+                reverse("signup"),
+                {
+                    "username": "mail-failure",
+                    "email": "mail-failure@example.com",
+                    "password1": "StrongPass!123",
+                    "password2": "StrongPass!123",
+                    "organization_name": "Mail Failure Workspace",
+                    "organization_code": "MAIL-FAILURE",
+                    "terms_accepted": "on",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "could not send a verification email")
+        self.assertFalse(get_user_model().objects.filter(username="mail-failure").exists())
+        self.assertFalse(Organization.objects.filter(code="MAIL-FAILURE").exists())
+        send_mail_mock.assert_called_once()
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_resend_verification_uses_generic_response_for_unknown_email(self):
+        pending_user = get_user_model().objects.create_user(
+            username="pending-user",
+            email="pending@example.com",
+            password="StrongPass!123",
+            is_active=False,
+        )
+        SignupConsent.objects.create(
+            user=pending_user,
+            terms_version="2026-11-11-v1",
+            privacy_version="2026-11-11-v1",
+        )
+
+        pending_response = self.client.post(
+            reverse("resend_verification"), {"email": "pending@example.com"}
+        )
+        unknown_response = self.client.post(
+            reverse("resend_verification"), {"email": "unknown@example.com"}
+        )
+
+        self.assertTemplateUsed(
+            pending_response, "registration/verification_pending.html"
+        )
+        self.assertTemplateUsed(
+            unknown_response, "registration/verification_pending.html"
+        )
+        self.assertEqual(len(mail.outbox), 1)
 
     def test_business_profile_is_a_guided_scoped_self_assessment(self):
         self.client.force_login(self.user)

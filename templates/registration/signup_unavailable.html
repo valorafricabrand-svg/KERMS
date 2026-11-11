@@ -1,0 +1,28 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>Account registration | KERMS.CO.KE</title>
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=2">
+</head>
+<body class="auth-page">
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <section class="auth-card" aria-labelledby="signup-unavailable-title">
+      <span class="auth-kicker">Account registration</span>
+      <h1 id="signup-unavailable-title">Registration is by invitation.</h1>
+      <p class="auth-intro">Public workspace creation is disabled for this deployment. Contact your workspace administrator to request access.</p>
+      <a class="auth-footer-link" href="{% url 'login' %}">Go to sign in</a>
+    </section>
+  </main>
+</body>
+</html>

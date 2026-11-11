@@ -18,6 +18,18 @@ urlpatterns = [
         name="logout",
     ),
     path("signup/", views.signup, name="signup"),
+    path(
+        "verify-email/<uidb64>/<token>/",
+        views.verify_email,
+        name="verify_email",
+    ),
+    path(
+        "resend-verification/",
+        views.resend_verification,
+        name="resend_verification",
+    ),
+    path("terms/", views.terms, name="terms"),
+    path("privacy/", views.privacy, name="privacy"),
     path("dashboard/", views.dashboard, name="dashboard"),
     path("billing/", views.billing, name="billing"),
     path("payments/daraja/callback/", views.daraja_callback, name="daraja_callback"),

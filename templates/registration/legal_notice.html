@@ -1,0 +1,59 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>{% if page == "terms" %}Terms of Use{% else %}Privacy Notice{% endif %} | KERMS.CO.KE</title>
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=2">
+</head>
+<body class="auth-page">
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <article class="auth-card">
+      {% if page == "terms" %}
+      <span class="auth-kicker">Using KERMS</span>
+      <h1>Terms of Use</h1>
+      <div class="auth-policy-content">
+        <p>KERMS provides tools for recording business context, risks, assessments, controls, incidents, and follow-up actions.</p>
+        <h2>Accounts and workspaces</h2>
+        <p>Provide accurate account details, verify the email address you control, and keep your sign-in credentials private. You are responsible for activity performed through your account. Workspace administrators manage access for their organization; only add information you are authorized to share.</p>
+        <h2>Appropriate use</h2>
+        <p>Use KERMS lawfully and do not attempt to access another organization’s data, disrupt the service, or upload content you do not have permission to use.</p>
+        <h2>Risk-management information</h2>
+        <p>KERMS is a decision-support and recordkeeping tool. Its assessments, prompts, and ratings are not guarantees, certifications, predictions, or legal, financial, or professional advice. Your organization remains responsible for its decisions and for checking the information it records.</p>
+        <h2>Plans and availability</h2>
+        <p>Plan features and prices are shown in the billing area. A payment is requested only after you confirm the payment prompt. The service may change as it is maintained and improved.</p>
+        <h2>Questions</h2>
+        <p>For access or workspace questions, contact your organization’s administrator.</p>
+      </div>
+      {% else %}
+      <span class="auth-kicker">Your information</span>
+      <h1>Privacy Notice</h1>
+      <div class="auth-policy-content">
+        <p>This notice explains the information needed to create and operate a KERMS account and business workspace.</p>
+        <h2>Information collected</h2>
+        <p>Account registration collects your name (if provided), username, email address, password, workspace name and code, and the versions and time of your terms and notice acceptance. Passwords are stored using Django’s password hashing; they are not stored as plain text. You must verify your email before signing in.</p>
+        <h2>Workspace information</h2>
+        <p>KERMS stores business and risk information that workspace members enter, such as profiles, assessments, locations, risks, controls, and incidents. Workspace membership and role settings determine which signed-in members can access that organization’s information.</p>
+        <h2>How information is used and shared</h2>
+        <p>Information is used to provide account access and the requested workspace features. Verification emails are sent through the configured email service. If you use M-Pesa billing, payment details are sent to Safaricom’s Daraja service to process and verify your payment. Business-location maps may request map tiles from OpenStreetMap or the configured tile provider.</p>
+        <h2>Security and retention</h2>
+        <p>KERMS uses access controls and technical safeguards, but no internet service can promise absolute security. Information is retained as needed to operate the service, support the workspace, and meet applicable obligations. Workspace administrators control member access; do not enter sensitive personal information unless it is necessary and you are authorized to do so.</p>
+        <h2>Your choices</h2>
+        <p>You may choose not to provide optional profile information. For account corrections or privacy requests, contact your workspace administrator while the service operator’s designated privacy contact is being established.</p>
+      </div>
+      {% endif %}
+      <p class="auth-help">These initial service notices require review and completion by the service operator, including verified contact details, retention practices, and applicable legal terms, before a public production launch.</p>
+      <a class="auth-footer-link" href="{% url 'signup' %}">Return to create account</a>
+    </article>
+  </main>
+</body>
+</html>

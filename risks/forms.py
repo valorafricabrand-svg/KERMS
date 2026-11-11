@@ -1,5 +1,8 @@
 import re
 from django import forms
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
 from datetime import date
 from collections import OrderedDict
 
@@ -8,22 +11,47 @@ from .models import BusinessProfile, EntrepreneurAssessment, Location, Risk, Str
 
 
 class SignUpForm(forms.Form):
-    first_name = forms.CharField(max_length=30, required=False, label="First name")
-    last_name = forms.CharField(max_length=30, required=False, label="Last name")
-    username = forms.CharField(max_length=150, label="Username")
-    email = forms.EmailField(label="Email address")
+    first_name = forms.CharField(
+        max_length=30,
+        required=False,
+        label="First name",
+        widget=forms.TextInput(attrs={"autocomplete": "given-name"}),
+    )
+    last_name = forms.CharField(
+        max_length=30,
+        required=False,
+        label="Last name",
+        widget=forms.TextInput(attrs={"autocomplete": "family-name"}),
+    )
+    username = forms.CharField(
+        max_length=150,
+        label="Username",
+        widget=forms.TextInput(attrs={"autocomplete": "username"}),
+    )
+    email = forms.EmailField(
+        label="Email address",
+        widget=forms.EmailInput(attrs={"autocomplete": "email"}),
+    )
     password1 = forms.CharField(
-        widget=forms.PasswordInput,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
         strip=False,
         label="Password",
     )
     password2 = forms.CharField(
-        widget=forms.PasswordInput,
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
         strip=False,
         label="Confirm password",
     )
     organization_name = forms.CharField(max_length=160, label="Business workspace name")
     organization_code = forms.CharField(max_length=20, label="Workspace code")
+    terms_accepted = forms.BooleanField(required=True)
+    website = forms.CharField(
+        required=False,
+        label="Leave this field empty",
+        widget=forms.TextInput(
+            attrs={"tabindex": "-1", "autocomplete": "off", "class": "signup-honeypot"}
+        ),
+    )
 
     def clean_username(self):
         username = self.cleaned_data["username"].strip()
@@ -34,10 +62,7 @@ class SignUpForm(forms.Form):
         return username
 
     def clean_email(self):
-        email = self.cleaned_data["email"].strip()
-        if "@" not in email:
-            raise forms.ValidationError("Enter a valid email address.")
-        return email
+        return self.cleaned_data["email"].strip().lower()
 
     def clean_organization_code(self):
         code = self.cleaned_data["organization_code"].strip()
@@ -59,19 +84,31 @@ class SignUpForm(forms.Form):
 
         username = cleaned_data.get("username")
         email = cleaned_data.get("email")
-        if username and email:
-            from django.contrib.auth import get_user_model
+        if username and email and password1:
             User = get_user_model()
-            if User.objects.filter(username__iexact=username).exists():
-                self.add_error("username", "This username is already taken.")
-            if User.objects.filter(email__iexact=email).exists():
-                self.add_error("email", "An account with this email already exists.")
+            user = User(
+                username=username,
+                email=email,
+                first_name=cleaned_data.get("first_name", ""),
+                last_name=cleaned_data.get("last_name", ""),
+            )
+            try:
+                validate_password(password1, user=user)
+            except ValidationError as error:
+                self.add_error("password1", error)
 
         organization_name = cleaned_data.get("organization_name")
         if organization_name and Organization.objects.filter(name__iexact=organization_name.strip()).exists():
             self.add_error("organization_name", "This workspace name is already in use.")
 
         return cleaned_data
+
+
+class ResendVerificationForm(forms.Form):
+    email = forms.EmailField(label="Email address")
+
+    def clean_email(self):
+        return self.cleaned_data["email"].strip().lower()
 
 
 class BusinessProfileForm(forms.ModelForm):

@@ -118,6 +118,7 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 12},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
@@ -145,6 +146,8 @@ STORAGES = {
 }
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/dashboard/"
+PUBLIC_SIGNUP_ENABLED = env_bool("DJANGO_PUBLIC_SIGNUP_ENABLED", DEBUG)
+PUBLIC_BASE_URL = os.getenv("DJANGO_PUBLIC_BASE_URL", "").rstrip("/")
 
 DARAJA_ENVIRONMENT = os.getenv("DARAJA_ENVIRONMENT", "sandbox").strip().lower()
 DARAJA_CONSUMER_KEY = os.getenv("DARAJA_CONSUMER_KEY", "")
@@ -158,13 +161,40 @@ DARAJA_TRANSACTION_TYPE = os.getenv(
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND") or (
+    "django.core.mail.backends.console.EmailBackend"
+    if DEBUG
+    else "django.core.mail.backends.smtp.EmailBackend"
+)
 EMAIL_HOST = os.getenv("EMAIL_HOST", "")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = env_bool("EMAIL_USE_TLS", True)
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "risk-platform@localhost")
+DEFAULT_FROM_EMAIL = os.getenv(
+    "DEFAULT_FROM_EMAIL", "risk-platform@localhost" if DEBUG else ""
+)
+if not DEBUG and EMAIL_BACKEND == "django.core.mail.backends.console.EmailBackend":
+    raise ImproperlyConfigured(
+        "Production email verification requires a real email backend."
+    )
+if not DEBUG and not DEFAULT_FROM_EMAIL:
+    raise ImproperlyConfigured(
+        "DEFAULT_FROM_EMAIL must be configured outside development."
+    )
+if not DEBUG and not PUBLIC_BASE_URL.startswith("https://"):
+    raise ImproperlyConfigured(
+        "DJANGO_PUBLIC_BASE_URL must be the public HTTPS origin outside development."
+    )
+if (
+    not DEBUG
+    and EMAIL_BACKEND == "django.core.mail.backends.smtp.EmailBackend"
+    and not EMAIL_HOST
+):
+    raise ImproperlyConfigured(
+        "EMAIL_HOST must be configured for the production SMTP backend."
+    )
+PASSWORD_RESET_TIMEOUT = 60 * 60 * 24 * 3
 
 SECURE_SSL_REDIRECT = env_bool("DJANGO_SECURE_SSL_REDIRECT", not DEBUG)
 SESSION_COOKIE_SECURE = env_bool("DJANGO_SESSION_COOKIE_SECURE", not DEBUG)

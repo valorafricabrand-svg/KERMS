@@ -1,0 +1,38 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>Verify email | KERMS.CO.KE</title>
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=2">
+</head>
+<body class="auth-page">
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <section class="auth-card" aria-labelledby="verification-title">
+      {% if valid %}
+      <span class="auth-kicker">Email verification</span>
+      <h1 id="verification-title">Confirm your email.</h1>
+      <p class="auth-intro">Confirming activates your KERMS account and signs you in.</p>
+      <form method="post">
+        {% csrf_token %}
+        <button class="auth-submit" type="submit">Verify email and continue <span aria-hidden="true">→</span></button>
+      </form>
+      {% else %}
+      <span class="auth-kicker">Verification link</span>
+      <h1 id="verification-title">This link can’t be used.</h1>
+      <p class="auth-intro">It may have expired or already been used. Request a new verification email to continue.</p>
+      <a class="auth-submit" href="{% url 'resend_verification' %}">Request another email <span aria-hidden="true">→</span></a>
+      {% endif %}
+    </section>
+  </main>
+</body>
+</html>

@@ -18,6 +18,11 @@ class BillingAccessMiddleware:
         "/billing/",
         "/login/",
         "/logout/",
+        "/signup/",
+        "/verify-email/",
+        "/resend-verification/",
+        "/terms/",
+        "/privacy/",
         "/payments/daraja/callback/",
     )
     feature_paths = (

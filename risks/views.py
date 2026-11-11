@@ -1,10 +1,18 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
+from django.urls import reverse
+from django.template.loader import render_to_string
 from django.utils.dateparse import parse_datetime
+from django.utils.crypto import salted_hmac
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import JsonResponse
@@ -16,6 +24,7 @@ import json
 import logging
 import secrets
 import re
+import smtplib
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
@@ -39,6 +48,7 @@ from .forms import (
     ComplianceMappingForm,
     RiskControlForm,
     RiskForm,
+    ResendVerificationForm,
     ScenarioForm,
     WebhookEndpointForm,
 )
@@ -68,6 +78,8 @@ from .models import (
     Organization,
     OrganizationMembership,
     OrganizationSubscription,
+    SignupConsent,
+    SignupRateLimit,
     KermsPayment,
     SubscriptionPlan,
     Portfolio,
@@ -827,34 +839,210 @@ def entrepreneur_assessment_detail(request, pk):
     )
 
 
+SIGNUP_TERMS_VERSION = "2026-11-11-v1"
+SIGNUP_PRIVACY_VERSION = "2026-11-11-v1"
+SIGNUP_LIMIT = 5
+SIGNUP_WINDOW = timedelta(hours=1)
+
+
+def _signup_request_allowed(request, email=""):
+    identifiers = [f"ip:{request.META.get('REMOTE_ADDR', '')}"]
+    normalized_email = email.strip().lower()
+    if normalized_email:
+        identifiers.append(f"email:{normalized_email}")
+    keys = sorted(
+        salted_hmac("risks.signup-rate-limit", identifier).hexdigest()
+        for identifier in identifiers
+    )
+    now = timezone.now()
+
+    with transaction.atomic():
+        SignupRateLimit.objects.filter(
+            window_started_at__lt=now - timedelta(days=1)
+        ).delete()
+        for key in keys:
+            SignupRateLimit.objects.get_or_create(
+                key=key,
+                defaults={"window_started_at": now, "request_count": 0},
+            )
+        limits = list(
+            SignupRateLimit.objects.select_for_update()
+            .filter(pk__in=keys)
+            .order_by("key")
+        )
+        if any(
+            now - limit.window_started_at < SIGNUP_WINDOW
+            and limit.request_count >= SIGNUP_LIMIT
+            for limit in limits
+        ):
+            return False
+        for limit in limits:
+            if now - limit.window_started_at >= SIGNUP_WINDOW:
+                limit.window_started_at = now
+                limit.request_count = 1
+            else:
+                limit.request_count += 1
+            limit.save(update_fields=["window_started_at", "request_count"])
+    return True
+
+
+def _send_verification_email(request, user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    verification_path = reverse("verify_email", args=(uid, token))
+    verification_url = (
+        f"{settings.PUBLIC_BASE_URL}{verification_path}"
+        if not settings.DEBUG
+        else request.build_absolute_uri(verification_path)
+    )
+    send_mail(
+        "Verify your KERMS account",
+        render_to_string(
+            "registration/verification_email.txt",
+            {"user": user, "verification_url": verification_url},
+            request=request,
+        ),
+        settings.DEFAULT_FROM_EMAIL,
+        [user.email],
+        fail_silently=False,
+    )
+
+
 def signup(request):
+    if not settings.PUBLIC_SIGNUP_ENABLED:
+        return render(request, "registration/signup_unavailable.html")
     if request.user.is_authenticated:
         return redirect("dashboard")
 
     form = SignUpForm(request.POST or None)
-    if request.method == "POST" and form.is_valid():
-        User = get_user_model()
-        user = User.objects.create_user(
-            username=form.cleaned_data["username"],
-            email=form.cleaned_data["email"],
-            password=form.cleaned_data["password1"],
-            first_name=form.cleaned_data["first_name"].strip(),
-            last_name=form.cleaned_data["last_name"].strip(),
-        )
-        organization = Organization.objects.create(
-            name=form.cleaned_data["organization_name"].strip(),
-            code=form.cleaned_data["organization_code"],
-        )
-        OrganizationMembership.objects.create(
-            user=user,
-            organization=organization,
-            role=OrganizationMembership.Role.ADMIN,
-        )
-        login(request, user)
-        messages.success(request, "Your workspace is ready. Welcome to KERMS.")
-        return redirect("dashboard")
+    if request.method == "POST":
+        if not _signup_request_allowed(request, request.POST.get("email", "")):
+            return render(
+                request,
+                "registration/signup.html",
+                {"form": form, "rate_limited": True},
+                status=429,
+            )
+        if request.POST.get("website", "").strip():
+            return render(request, "registration/verification_pending.html")
+        if form.is_valid():
+            User = get_user_model()
+            if User.objects.filter(
+                Q(username__iexact=form.cleaned_data["username"])
+                | Q(email__iexact=form.cleaned_data["email"])
+            ).exists():
+                return render(request, "registration/verification_pending.html")
+            try:
+                with transaction.atomic():
+                    user = User.objects.create_user(
+                        username=form.cleaned_data["username"],
+                        email=form.cleaned_data["email"],
+                        password=form.cleaned_data["password1"],
+                        first_name=form.cleaned_data["first_name"].strip(),
+                        last_name=form.cleaned_data["last_name"].strip(),
+                    )
+                    user.is_active = False
+                    user.save(update_fields=["is_active"])
+                    organization = Organization.objects.create(
+                        name=form.cleaned_data["organization_name"].strip(),
+                        code=form.cleaned_data["organization_code"],
+                    )
+                    OrganizationMembership.objects.create(
+                        user=user,
+                        organization=organization,
+                        role=OrganizationMembership.Role.ADMIN,
+                    )
+                    SignupConsent.objects.create(
+                        user=user,
+                        terms_version=SIGNUP_TERMS_VERSION,
+                        privacy_version=SIGNUP_PRIVACY_VERSION,
+                    )
+                    _send_verification_email(request, user)
+            except (OSError, smtplib.SMTPException):
+                logger.exception("Could not send account verification email.")
+                form.add_error(
+                    None,
+                    "We could not send a verification email right now. Please try again later.",
+                )
+            except IntegrityError:
+                form.add_error(
+                    None,
+                    "We could not create this account. Check the workspace details and try again.",
+                )
+            else:
+                return render(request, "registration/verification_pending.html")
 
     return render(request, "registration/signup.html", {"form": form})
+
+
+def resend_verification(request):
+    if request.user.is_authenticated:
+        return redirect("dashboard")
+
+    form = ResendVerificationForm(request.POST or None)
+    if request.method == "POST":
+        if not _signup_request_allowed(request, request.POST.get("email", "")):
+            return render(
+                request,
+                "registration/resend_verification.html",
+                {"form": form, "rate_limited": True},
+                status=429,
+            )
+        if form.is_valid():
+            user = get_user_model().objects.filter(
+                email__iexact=form.cleaned_data["email"],
+                is_active=False,
+                signup_consent__verified_at__isnull=True,
+            ).first()
+            if user:
+                try:
+                    _send_verification_email(request, user)
+                except (OSError, smtplib.SMTPException):
+                    logger.exception("Could not resend account verification email.")
+            return render(request, "registration/verification_pending.html")
+
+    return render(request, "registration/resend_verification.html", {"form": form})
+
+
+def verify_email(request, uidb64, token):
+    User = get_user_model()
+    try:
+        user_id = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=user_id)
+    except (TypeError, ValueError, OverflowError, User.DoesNotExist):
+        user = None
+
+    consent = (
+        SignupConsent.objects.filter(user=user, verified_at__isnull=True).first()
+        if user
+        else None
+    )
+    if not user or not consent or not default_token_generator.check_token(user, token):
+        return render(
+            request,
+            "registration/verify_email.html",
+            {"valid": False},
+            status=400,
+        )
+
+    if request.method == "POST":
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        consent.verified_at = timezone.now()
+        consent.save(update_fields=["verified_at"])
+        login(request, user)
+        messages.success(request, "Your email is verified and your workspace is ready.")
+        return redirect("dashboard")
+
+    return render(request, "registration/verify_email.html", {"valid": True})
+
+
+def terms(request):
+    return render(request, "registration/legal_notice.html", {"page": "terms"})
+
+
+def privacy(request):
+    return render(request, "registration/legal_notice.html", {"page": "privacy"})
 
 
 @login_required
@@ -1122,7 +1310,11 @@ def dashboard(request):
 
 
 def public_home(request):
-    return render(request, "public_home.html")
+    return render(
+        request,
+        "public_home.html",
+        {"public_signup_enabled": settings.PUBLIC_SIGNUP_ENABLED},
+    )
 
 
 @login_required

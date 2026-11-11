@@ -1,0 +1,29 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#102f29">
+  <title>Check your email | KERMS.CO.KE</title>
+  <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=2">
+</head>
+<body class="auth-page">
+  <header class="site-header auth-header">
+    <a class="site-brand" href="{% url 'home' %}" aria-label="KERMS.CO.KE home">
+      <span class="site-brand-mark" aria-hidden="true">K</span>
+      <span class="site-brand-name">KERMS<small>.CO.KE</small><span class="site-brand-caption">Kenya Enterprise Risk Management System</span></span>
+    </a>
+  </header>
+  <main class="auth-main" id="main-content">
+    <section class="auth-card" aria-labelledby="verification-title">
+      <span class="auth-kicker">One more step</span>
+      <h1 id="verification-title">Check your email.</h1>
+      <p class="auth-intro">If a new or unverified account matches that address, we’ve sent a verification link. Open it to activate your account before signing in. The link expires after three days.</p>
+      <p class="auth-help">Can’t find the message? Check your spam folder or <a href="{% url 'resend_verification' %}">request another verification email</a>.</p>
+      <a class="auth-footer-link" href="{% url 'login' %}">Return to sign in</a>
+    </section>
+  </main>
+</body>
+</html>
