@@ -1222,7 +1222,7 @@ def signup(request):
                 )
             else:
                 if settings.DEBUG:
-                    login(request, user)
+                    login(request, user, backend="django.contrib.auth.backends.ModelBackend")
                     messages.success(request, "Your workspace is ready.")
                     return redirect("dashboard")
                 return render(request, "registration/verification_pending.html")
@@ -1292,7 +1292,7 @@ def verify_email(request, uidb64, token):
         user.save(update_fields=["is_active"])
         consent.verified_at = timezone.now()
         consent.save(update_fields=["verified_at"])
-        login(request, user)
+        login(request, user, backend="django.contrib.auth.backends.ModelBackend")
         messages.success(request, "Your email is verified and your workspace is ready.")
         return redirect("dashboard")
 

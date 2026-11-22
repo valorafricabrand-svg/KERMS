@@ -6,8 +6,29 @@ from django.core.exceptions import ValidationError
 from datetime import date
 from collections import OrderedDict
 
+from allauth.socialaccount.forms import SignupForm as SocialSignupForm
+
 from .assessment_questions import ASSESSMENT_QUESTION_KEYS, ASSESSMENT_SECTIONS, RESPONSE_CHOICES
 from .models import BusinessProfile, EntrepreneurAssessment, Location, Risk, StressScenario, RiskControl, AssuranceTest, LossIncident, ComplianceFramework, FrameworkRequirement, ComplianceMapping, GovernanceCommittee, GovernancePolicy, IntegrationConnection, WebhookEndpoint, ManagementTransition, Organization
+
+
+def _clean_organization_code(code):
+    code = code.strip()
+    if not code:
+        raise forms.ValidationError("Enter a short workspace code.")
+    normalized = re.sub(r"[^A-Za-z0-9_-]", "", code).upper()
+    if normalized != code.upper():
+        raise forms.ValidationError("Use letters, numbers, hyphens, or underscores only.")
+    if Organization.objects.filter(code__iexact=normalized).exists():
+        raise forms.ValidationError("This workspace code is already in use.")
+    return normalized
+
+
+def _clean_organization_name(name):
+    name = name.strip()
+    if Organization.objects.filter(name__iexact=name).exists():
+        raise forms.ValidationError("This workspace name is already in use.")
+    return name
 
 
 class SignUpForm(forms.Form):
@@ -65,15 +86,7 @@ class SignUpForm(forms.Form):
         return self.cleaned_data["email"].strip().lower()
 
     def clean_organization_code(self):
-        code = self.cleaned_data["organization_code"].strip()
-        if not code:
-            raise forms.ValidationError("Enter a short workspace code.")
-        normalized = re.sub(r"[^A-Za-z0-9_-]", "", code).upper()
-        if normalized != code.upper():
-            raise forms.ValidationError("Use letters, numbers, hyphens, or underscores only.")
-        if Organization.objects.filter(code__iexact=normalized).exists():
-            raise forms.ValidationError("This workspace code is already in use.")
-        return normalized
+        return _clean_organization_code(self.cleaned_data["organization_code"])
 
     def clean(self):
         cleaned_data = super().clean()
@@ -98,8 +111,11 @@ class SignUpForm(forms.Form):
                 self.add_error("password1", error)
 
         organization_name = cleaned_data.get("organization_name")
-        if organization_name and Organization.objects.filter(name__iexact=organization_name.strip()).exists():
-            self.add_error("organization_name", "This workspace name is already in use.")
+        if organization_name:
+            try:
+                _clean_organization_name(organization_name)
+            except ValidationError as error:
+                self.add_error("organization_name", error)
 
         return cleaned_data
 
@@ -109,6 +125,20 @@ class ResendVerificationForm(forms.Form):
 
     def clean_email(self):
         return self.cleaned_data["email"].strip().lower()
+
+
+class GoogleWorkspaceSignupForm(SocialSignupForm):
+    """Collects the workspace details a Google sign-in can't supply."""
+
+    organization_name = forms.CharField(max_length=160, label="Business workspace name")
+    organization_code = forms.CharField(max_length=20, label="Workspace code")
+    terms_accepted = forms.BooleanField(required=True)
+
+    def clean_organization_code(self):
+        return _clean_organization_code(self.cleaned_data["organization_code"])
+
+    def clean_organization_name(self):
+        return _clean_organization_name(self.cleaned_data["organization_name"])
 
 
 class BusinessProfileForm(forms.ModelForm):

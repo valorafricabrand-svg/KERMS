@@ -83,6 +83,13 @@
 
         <button class="auth-submit" type="submit">Create workspace <span aria-hidden="true">→</span></button>
       </form>
+      {% if google_sign_in_enabled %}
+      <div class="auth-divider" role="separator"><span>or</span></div>
+      <a class="auth-google-button" href="{% url 'google_login' %}">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="" width="18" height="18">
+        Continue with Google
+      </a>
+      {% endif %}
       <p class="auth-help">Already have access? <a href="{% url 'login' %}">Sign in instead</a>{% if email_verification_required %}. Need another verification email? <a href="{% url 'resend_verification' %}">Resend it</a>{% endif %}.</p>
       <a class="auth-footer-link" href="{% url 'home' %}">← Return to KERMS.CO.KE</a>
     </section>

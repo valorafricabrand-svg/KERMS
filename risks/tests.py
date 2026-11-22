@@ -7,10 +7,19 @@ from smtplib import SMTPException
 from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
+from django.contrib.messages.middleware import MessageMiddleware
+from django.contrib.sessions.middleware import SessionMiddleware
 from django.core import mail
-from django.test import SimpleTestCase, TestCase, override_settings
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+
+from allauth.account.models import EmailAddress
+from allauth.account.utils import user_email, user_username
+from allauth.core import context as allauth_context
+from allauth.socialaccount.helpers import complete_social_login
+from allauth.socialaccount.models import SocialAccount, SocialLogin
 
 from .ai_onboarding_demo import (
     AIOnboardingDemoError,
@@ -586,6 +595,121 @@ class RiskPlatformTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Registration is by invitation")
+
+    def test_login_page_hides_google_button_when_not_configured(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertNotContains(response, "Continue with Google")
+
+    @override_settings(GOOGLE_SIGN_IN_ENABLED=True)
+    def test_login_and_signup_pages_show_google_button_when_configured(self):
+        login_response = self.client.get(reverse("login"))
+        signup_response = self.client.get(reverse("signup"))
+
+        self.assertContains(login_response, "Continue with Google")
+        self.assertContains(signup_response, "Continue with Google")
+
+    @override_settings(
+        SOCIALACCOUNT_PROVIDERS={
+            "google": {
+                "APP": {"client_id": "test-client-id", "secret": "test-secret", "key": ""},
+                "SCOPE": ["profile", "email"],
+                "AUTH_PARAMS": {"access_type": "online"},
+                "OAUTH_PKCE_ENABLED": True,
+            }
+        },
+    )
+    def test_google_login_redirects_to_google_oauth(self):
+        response = self.client.get(reverse("google_login"))
+
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("accounts.google.com", response.url)
+
+    def _complete_social_login(self, sociallogin):
+        request = RequestFactory().get("/accounts/google/login/callback/")
+        SessionMiddleware(lambda r: None).process_request(request)
+        MessageMiddleware(lambda r: None).process_request(request)
+        request.user = AnonymousUser()
+        with allauth_context.request_context(request):
+            response = complete_social_login(request, sociallogin)
+        request.session.save()
+        session = self.client.session
+        for key, value in request.session.items():
+            session[key] = value
+        session.save()
+        return response
+
+    @override_settings(PUBLIC_SIGNUP_ENABLED=True)
+    def test_google_signup_creates_workspace_for_new_user(self):
+        account = SocialAccount(provider="google", uid="google-uid-new")
+        user = get_user_model()()
+        user_username(user, "new-google-user")
+        user_email(user, "new-google-user@example.com")
+        sociallogin = SocialLogin(
+            user=user,
+            account=account,
+            email_addresses=[
+                EmailAddress(email="new-google-user@example.com", verified=True, primary=True)
+            ],
+        )
+
+        redirect = self._complete_social_login(sociallogin)
+        self.assertEqual(redirect.status_code, 302)
+        self.assertIn("signup", redirect.url)
+
+        response = self.client.post(
+            redirect.url,
+            {
+                "username": "new-google-user",
+                "email": "new-google-user@example.com",
+                "organization_name": "Google Signup Workspace",
+                "organization_code": "GOOGLE-WS",
+                "terms_accepted": "on",
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user = get_user_model().objects.get(username="new-google-user")
+        self.assertTrue(user.is_active)
+        self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
+        organization = Organization.objects.get(code="GOOGLE-WS")
+        self.assertEqual(organization.name, "Google Signup Workspace")
+        membership = OrganizationMembership.objects.get(user=user, organization=organization)
+        self.assertEqual(membership.role, OrganizationMembership.Role.ADMIN)
+        consent = SignupConsent.objects.get(user=user)
+        self.assertIsNotNone(consent.verified_at)
+
+    @override_settings(PUBLIC_SIGNUP_ENABLED=True)
+    def test_google_login_links_to_existing_account_with_matching_email(self):
+        existing_user = get_user_model().objects.create_user(
+            username="existing-user",
+            email="existing@example.com",
+            password="StrongPass!123",
+        )
+        account = SocialAccount(provider="google", uid="google-uid-existing")
+        user = get_user_model()()
+        user_username(user, "existing-user-google")
+        user_email(user, "existing@example.com")
+        sociallogin = SocialLogin(
+            user=user,
+            account=account,
+            email_addresses=[
+                EmailAddress(email="existing@example.com", verified=True, primary=True)
+            ],
+        )
+
+        self._complete_social_login(sociallogin)
+
+        self.assertEqual(self.client.session.get("_auth_user_id"), str(existing_user.pk))
+        self.assertTrue(
+            SocialAccount.objects.filter(
+                uid="google-uid-existing", user=existing_user
+            ).exists()
+        )
+        self.assertFalse(
+            get_user_model().objects.filter(username="existing-user-google").exists()
+        )
 
     @override_settings(
         DEBUG=False,

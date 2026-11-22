@@ -115,6 +115,35 @@ for complete operator contact details and legal review. Multi-factor
 authentication, organization invitations, and advanced bot detection should
 be added before enterprise onboarding.
 
+### Sign in with Google
+
+KERMS can offer a "Continue with Google" button on the login and signup
+pages, powered by `django-allauth`. It is off by default: the button only
+renders once both `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET`
+are set.
+
+To enable it:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/apis/credentials),
+   create an OAuth 2.0 Client ID (Web application).
+2. Add an Authorized redirect URI of
+   `<your-public-base-url>/accounts/google/login/callback/` (e.g.
+   `https://kerm.co.ke/accounts/google/login/callback/`).
+3. Set `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` from that
+   client, and redeploy.
+
+Behavior:
+
+- A brand-new Google sign-in is routed to a short "finish setting up your
+  workspace" form (workspace name, workspace code, terms acceptance) before
+  the account and its `Organization`/`OrganizationMembership` (role: admin)
+  are created, mirroring the manual signup flow. Google-verified email means
+  no separate verification email is sent.
+- If the Google account's email matches an existing KERMS user, sign-in
+  links to that existing account instead of creating a duplicate one.
+- New Google signups are gated by the same `DJANGO_PUBLIC_SIGNUP_ENABLED`
+  flag as manual registration.
+
 ## Quick risk check (AI-assisted)
 
 **Quick risk check** (`/quick-risk-check/`) is the production feature for
