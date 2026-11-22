@@ -650,6 +650,73 @@ ASSESSMENT_EDITOR_ROLES = {
 }
 
 
+def _describe_business_model(profile):
+    """Build a human-readable business-model picture for the AI, omitting unset fields."""
+    if profile is None:
+        return {}
+
+    model = {}
+    operating_model_label = dict(BusinessProfile.OperatingModel.choices).get(
+        profile.operating_model
+    )
+    if operating_model_label:
+        model["operating_model"] = operating_model_label
+
+    revenue_model_label = dict(BusinessProfile.RevenueModel.choices).get(
+        profile.revenue_model
+    )
+    if revenue_model_label:
+        model["revenue_model"] = revenue_model_label
+
+    channel_labels = dict(BusinessProfile.CHANNEL_CHOICES)
+    if profile.sales_channels:
+        model["sales_channels"] = [
+            channel_labels.get(value, value) for value in profile.sales_channels
+        ]
+
+    payment_labels = dict(BusinessProfile.PAYMENT_CHOICES)
+    if profile.payment_methods:
+        model["payment_methods"] = [
+            payment_labels.get(value, value) for value in profile.payment_methods
+        ]
+
+    cost_driver_labels = dict(BusinessProfile.COST_DRIVER_CHOICES)
+    if profile.main_cost_drivers:
+        model["main_cost_drivers"] = [
+            cost_driver_labels.get(value, value) for value in profile.main_cost_drivers
+        ]
+
+    concentration_label = dict(BusinessProfile.ConcentrationBand.choices).get(
+        profile.customer_concentration
+    )
+    if concentration_label and profile.customer_concentration != BusinessProfile.ConcentrationBand.NOT_SURE:
+        model["customer_concentration"] = concentration_label
+
+    supplier_label = dict(BusinessProfile.SupplierReliance.choices).get(
+        profile.supplier_reliance
+    )
+    if supplier_label and profile.supplier_reliance != BusinessProfile.SupplierReliance.NOT_SURE:
+        model["supplier_reliance"] = supplier_label
+
+    legal_structure_label = dict(BusinessProfile.LegalStructure.choices).get(
+        profile.legal_structure
+    )
+    if legal_structure_label:
+        model["legal_structure"] = legal_structure_label
+
+    staff_band_label = dict(BusinessProfile.StaffBand.choices).get(profile.staff_band)
+    if staff_band_label:
+        model["staff_size"] = staff_band_label
+
+    turnover_label = dict(BusinessProfile.TurnoverBand.choices).get(
+        profile.annual_turnover_band
+    )
+    if turnover_label and profile.annual_turnover_band != BusinessProfile.TurnoverBand.PREFER_NOT_TO_SAY:
+        model["annual_turnover"] = turnover_label
+
+    return model
+
+
 def _generate_ai_risk_reference(organization, used_references):
     today = timezone.localdate().strftime("%Y%m%d")
     counter = 1
@@ -726,6 +793,9 @@ def quick_risk_check(request):
                     "location": f"{data['county']} County, Kenya",
                     "key_details": data["top_concerns"] or "No further details provided.",
                 }
+                business_model = _describe_business_model(profile)
+                if business_model:
+                    business_context["business_model"] = business_model
                 try:
                     analysis = generate_business_risk_analysis(business_context)
                 except AIRiskAnalysisError as error:
@@ -746,6 +816,7 @@ def quick_risk_check(request):
                             likelihood=risk_data["likelihood"],
                             impact=risk_data["impact"],
                             early_warning_indicator=risk_data["early_warning_indicator"],
+                            business_model_link=risk_data["business_model_link"],
                             ai_generated=True,
                             ai_generated_at=now_ts,
                         )

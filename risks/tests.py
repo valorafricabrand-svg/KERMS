@@ -793,6 +793,8 @@ class RiskPlatformTests(TestCase):
                 "payment_methods": ["cash", "mobile_money"],
                 "customer_concentration": BusinessProfile.ConcentrationBand.NOT_SURE,
                 "supplier_reliance": BusinessProfile.SupplierReliance.FEW_OPTIONS,
+                "revenue_model": BusinessProfile.RevenueModel.ONE_OFF_SALES,
+                "main_cost_drivers": ["stock_materials", "rent_premises"],
                 "top_concerns": "Keeping the shop open during a power outage.",
             },
         )
@@ -802,6 +804,8 @@ class RiskPlatformTests(TestCase):
         self.assertEqual(profile.updated_by, self.user)
         self.assertEqual(profile.sales_channels, ["physical", "social"])
         self.assertEqual(profile.payment_methods, ["cash", "mobile_money"])
+        self.assertEqual(profile.revenue_model, BusinessProfile.RevenueModel.ONE_OFF_SALES)
+        self.assertEqual(profile.main_cost_drivers, ["stock_materials", "rent_premises"])
         self.assertEqual(profile.profile_completion, 100)
         self.assertFalse(EntrepreneurAssessment.objects.filter(organization=self.organization).exists())
 
@@ -2037,6 +2041,7 @@ class RiskPlatformTests(TestCase):
                     "likelihood": 4,
                     "impact": 3,
                     "early_warning_indicator": "Rising stock discrepancies",
+                    "business_model_link": "Sector: retail",
                     "mitigations": ["Install basic CCTV", "Reconcile stock weekly"],
                 }
             ],
@@ -2066,11 +2071,76 @@ class RiskPlatformTests(TestCase):
         self.assertTrue(risk.ai_generated)
         self.assertEqual(risk.owner, self.user)
         self.assertEqual(risk.risk_type, "operational")
+        self.assertEqual(risk.business_model_link, "Sector: retail")
         self.assertEqual(risk.treatments.count(), 2)
 
         profile = BusinessProfile.objects.get(organization=self.organization)
         self.assertEqual(profile.sector, BusinessProfile.Sector.RETAIL)
         self.assertEqual(profile.county, "Nairobi")
+
+    @override_settings(ANTHROPIC_API_KEY="test-anthropic-key")
+    @patch("risks.views.generate_business_risk_analysis")
+    def test_quick_risk_check_enriches_context_from_existing_business_model(
+        self, generate_analysis
+    ):
+        BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.RETAIL,
+            county="Nairobi",
+            operating_model=BusinessProfile.OperatingModel.BUSINESS_TO_CONSUMER,
+            revenue_model=BusinessProfile.RevenueModel.ONE_OFF_SALES,
+            sales_channels=["physical", "social"],
+            payment_methods=["mobile_money"],
+            customer_concentration=BusinessProfile.ConcentrationBand.OVER_50,
+            supplier_reliance=BusinessProfile.SupplierReliance.SINGLE_CRITICAL,
+            main_cost_drivers=["stock_materials", "rent_premises"],
+        )
+        self.client.force_login(self.user)
+        generate_analysis.return_value = {
+            "summary": "Concentration and single-supplier risk stand out.",
+            "risks": [
+                {
+                    "title": "Loss of the largest customer",
+                    "description": "Over half of revenue depends on one customer.",
+                    "risk_type": "financial",
+                    "likelihood": 3,
+                    "impact": 4,
+                    "early_warning_indicator": "Order volume drops",
+                    "business_model_link": "Customer concentration",
+                    "mitigations": ["Diversify the customer base"],
+                }
+            ],
+        }
+
+        self.client.post(
+            reverse("quick_risk_check"),
+            {
+                "organization": self.organization.pk,
+                "business_name": "Test Bank",
+                "sector": BusinessProfile.Sector.RETAIL,
+                "other_sector": "",
+                "county": "Nairobi",
+                "top_concerns": "",
+                "confirm_ai": "on",
+            },
+        )
+
+        generate_analysis.assert_called_once()
+        business_context = generate_analysis.call_args.args[0]
+        business_model = business_context["business_model"]
+        self.assertEqual(business_model["revenue_model"], "One-off product or goods sales")
+        self.assertEqual(
+            business_model["customer_concentration"],
+            "One customer accounts for more than 50%",
+        )
+        self.assertEqual(
+            business_model["supplier_reliance"], "One supplier is hard to replace"
+        )
+        self.assertIn("Rent or premises", business_model["main_cost_drivers"])
+        self.assertIn("Social media", business_model["sales_channels"])
+
+        risk = Risk.objects.get(organization=self.organization)
+        self.assertEqual(risk.business_model_link, "Customer concentration")
 
     def test_quick_risk_check_requires_editor_role(self):
         viewer = get_user_model().objects.create_user("viewer-user", "viewer@example.com", "test-password")
@@ -2269,6 +2339,7 @@ class AIRiskAnalysisServiceTests(SimpleTestCase):
                     "likelihood": 4,
                     "impact": 3,
                     "early_warning_indicator": "Stock discrepancies rise",
+                    "business_model_link": "Revenue model: one-off sales",
                     "mitigations": ["Install CCTV", "Reconcile stock weekly"],
                 }
             ],
@@ -2282,6 +2353,10 @@ class AIRiskAnalysisServiceTests(SimpleTestCase):
             "business_type": "Retail and shops",
             "location": "Nairobi County, Kenya",
             "key_details": "Sells electronics, 3 staff.",
+            "business_model": {
+                "revenue_model": "One-off product or goods sales",
+                "customer_concentration": "One customer accounts for more than 50%",
+            },
         }
 
         result = generate_business_risk_analysis(business_context)
@@ -2295,6 +2370,9 @@ class AIRiskAnalysisServiceTests(SimpleTestCase):
         self.assertEqual(prompt["business"], business_context)
         self.assertEqual(result["risks"][0]["title"], "Inventory theft")
         self.assertEqual(result["risks"][0]["likelihood"], 4)
+        self.assertEqual(
+            result["risks"][0]["business_model_link"], "Revenue model: one-off sales"
+        )
 
     @override_settings(ANTHROPIC_API_KEY="")
     def test_generate_business_risk_analysis_requires_api_key(self):

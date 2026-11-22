@@ -9,6 +9,7 @@
   <section class="card">
     <h2>Tell us about your business, get suggested risks</h2>
     <p>Enter your business name, location, business type, and a few key details. We send these details to Claude (Anthropic) to suggest realistic risks and practical ways to reduce them. Suggestions are saved to your risk register as drafts under your name — review, adjust, or remove each one before relying on it. This is advisory guidance, not a certified risk assessment.</p>
+    <p class="profile-help">For sharper, business-model-aware suggestions (tied to your revenue model, sales channels, cost drivers, and customer or supplier concentration), fill in your <a href="{% url 'business_profile' %}?organization={{ organization.pk }}">full business profile</a> first.</p>
     {% if not ai_configured %}
     <div class="form-errors">AI risk analysis is not configured for this deployment yet. An administrator needs to set <code>ANTHROPIC_API_KEY</code> and keep <code>DJANGO_AI_RISK_ANALYSIS_ENABLED</code> enabled.</div>
     {% endif %}
@@ -49,6 +50,7 @@
       <div>
         <strong><a href="{% url 'risk_detail' risk.pk %}">{{ risk.reference }} · {{ risk.title }}</a></strong>
         <span>{{ risk.get_risk_type_display }} · Likelihood {{ risk.likelihood }} × Impact {{ risk.impact }} · <span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span></span>
+        {% if risk.business_model_link %}<span class="eyebrow">Linked to: {{ risk.business_model_link }}</span>{% endif %}
       </div>
     </div>
     {% endfor %}

@@ -408,6 +408,16 @@ class BusinessProfile(models.Model):
         ALTERNATIVES = "alternatives", "I have alternative suppliers"
         NOT_SURE = "not_sure", "Not sure"
 
+    class RevenueModel(models.TextChoices):
+        ONE_OFF_SALES = "one_off_sales", "One-off product or goods sales"
+        RECURRING = "recurring", "Recurring or subscription payments"
+        COMMISSION = "commission", "Commission or brokerage fees"
+        MARKUP_RESALE = "markup_resale", "Markup on resold goods"
+        SERVICE_FEES = "service_fees", "Fees for services rendered"
+        PROJECT_CONTRACT = "project_contract", "Project or contract-based billing"
+        MIXED = "mixed", "A mix of several of these"
+        OTHER = "other", "Other"
+
     COUNTY_CHOICES = [
         ("Baringo", "Baringo"), ("Bomet", "Bomet"), ("Bungoma", "Bungoma"),
         ("Busia", "Busia"), ("Elgeyo-Marakwet", "Elgeyo-Marakwet"),
@@ -445,6 +455,17 @@ class BusinessProfile(models.Model):
         ("online", "Online payment provider"),
         ("other", "Other"),
     ]
+    COST_DRIVER_CHOICES = [
+        ("stock_materials", "Stock or raw materials"),
+        ("labour_wages", "Staff wages"),
+        ("rent_premises", "Rent or premises"),
+        ("transport_logistics", "Transport or logistics"),
+        ("utilities", "Utilities (power, water, internet)"),
+        ("loan_repayments", "Loan or credit repayments"),
+        ("equipment_maintenance", "Equipment or maintenance"),
+        ("marketing", "Marketing or customer acquisition"),
+        ("other", "Other"),
+    ]
 
     organization = models.OneToOneField(
         Organization, on_delete=models.CASCADE, related_name="business_profile"
@@ -471,6 +492,10 @@ class BusinessProfile(models.Model):
     supplier_reliance = models.CharField(
         max_length=20, choices=SupplierReliance.choices, blank=True
     )
+    revenue_model = models.CharField(
+        max_length=24, choices=RevenueModel.choices, blank=True
+    )
+    main_cost_drivers = models.JSONField(default=list, blank=True)
     top_concerns = models.TextField(blank=True)
     updated_by = models.ForeignKey(
         "auth.User", on_delete=models.SET_NULL, null=True, blank=True,
@@ -652,6 +677,7 @@ class Risk(models.Model):
     appetite = models.ForeignKey(RiskAppetite, on_delete=models.SET_NULL, null=True, blank=True)
     ai_generated = models.BooleanField(default=False)
     ai_generated_at = models.DateTimeField(null=True, blank=True)
+    business_model_link = models.CharField(max_length=160, blank=True)
     early_warning_indicator = models.CharField(max_length=255, blank=True)
     early_warning_threshold = models.CharField(max_length=255, blank=True)
     review_date = models.DateField(null=True, blank=True)

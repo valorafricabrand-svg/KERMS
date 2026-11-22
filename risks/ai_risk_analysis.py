@@ -75,6 +75,9 @@ def _validate_risk_analysis(value):
                 "early_warning_indicator": _optional_text(
                     risk.get("early_warning_indicator"), "early warning indicator", 255
                 ),
+                "business_model_link": _text(
+                    risk.get("business_model_link"), "business model link", 160
+                ),
                 "mitigations": _mitigations(risk.get("mitigations")),
             }
         )
@@ -90,16 +93,27 @@ def _build_prompt(business_context):
         "business": business_context,
         "instructions": (
             "You are helping a small or medium business owner in Kenya think through "
-            "practical risks. Using only the business details supplied, return JSON with "
-            "exactly these top-level keys: summary (a 1-3 sentence plain-language overview) "
-            f"and risks (an array of {PROMPT_MIN_RISKS} to {MAX_RISKS} objects). Each risk object "
-            "must have: title (concise risk statement, under 160 characters), description "
-            "(explain the likely cause and the effect on money, customers, staff, or "
-            "operations), risk_type (exactly one of: strategic, financial, operational, "
-            "political, climate, cyber, compliance, third_party), likelihood (integer 1-5, "
-            "1=rare, 5=almost certain), impact (integer 1-5, 1=minor, 5=severe), "
+            "practical risks grounded in how this specific business actually makes and "
+            "spends money. The business details may include its business model: how it "
+            "earns revenue, its sales channels and payment methods, how concentrated its "
+            "customers and suppliers are, and its main cost drivers. Prefer risks that stem "
+            "directly from these specific business model details over generic sector risks; "
+            "where a business model detail is not supplied, do not assume one. Using only "
+            "the business details supplied, return JSON with exactly these top-level keys: "
+            "summary (a 1-3 sentence plain-language overview) and risks (an array of "
+            f"{PROMPT_MIN_RISKS} to {MAX_RISKS} objects). Each risk object must have: title "
+            "(concise risk statement, under 160 characters), description (explain the "
+            "likely cause and the effect on money, customers, staff, or operations), "
+            "risk_type (exactly one of: strategic, financial, operational, political, "
+            "climate, cyber, compliance, third_party), likelihood (integer 1-5, 1=rare, "
+            "5=almost certain), impact (integer 1-5, 1=minor, 5=severe), "
             "early_warning_indicator (a short observable warning sign, or an empty string "
-            "if none is obvious), and mitigations (an array of 2 to 5 short, affordable, "
+            "if none is obvious), business_model_link (a short phrase, under 160 "
+            "characters, naming the specific business model detail this risk comes from, "
+            "for example 'Revenue model: one-off sales' or 'Customer concentration' or "
+            "'Cost driver: transport/logistics'; if the risk is not tied to a specific "
+            "business model detail, name the closest general driver instead, such as "
+            "'Sector: retail'), and mitigations (an array of 2 to 5 short, affordable, "
             "practical actions this specific business could take). Base ratings only on the "
             "details given; do not invent facts about this business, its finances, or its "
             "exact location's hazards, and do not claim knowledge of live weather, markets, "

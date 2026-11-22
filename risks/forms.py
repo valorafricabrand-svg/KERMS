@@ -154,6 +154,12 @@ class BusinessProfileForm(forms.ModelForm):
         widget=forms.CheckboxSelectMultiple,
         label="How do customers pay you?",
     )
+    main_cost_drivers = forms.MultipleChoiceField(
+        choices=BusinessProfile.COST_DRIVER_CHOICES,
+        required=False,
+        widget=forms.CheckboxSelectMultiple,
+        label="What are your biggest cost drivers?",
+    )
 
     class Meta:
         model = BusinessProfile
@@ -170,6 +176,8 @@ class BusinessProfileForm(forms.ModelForm):
             "payment_methods",
             "customer_concentration",
             "supplier_reliance",
+            "revenue_model",
+            "main_cost_drivers",
             "top_concerns",
         )
         widgets = {
@@ -187,6 +195,9 @@ class BusinessProfileForm(forms.ModelForm):
         if self.instance and self.instance.pk:
             self.initial.setdefault("sales_channels", self.instance.sales_channels)
             self.initial.setdefault("payment_methods", self.instance.payment_methods)
+            self.initial.setdefault("main_cost_drivers", self.instance.main_cost_drivers)
+        self.fields["revenue_model"].required = False
+        self.fields["revenue_model"].label = "How does your business mainly earn money?"
         self.fields["other_sector"].required = False
         self.fields["other_sector"].label = "Your business sector"
         self.fields["other_sector"].help_text = "Fill this in if you selected Other."
@@ -200,7 +211,7 @@ class BusinessProfileForm(forms.ModelForm):
         self.fields["top_concerns"].label = "What worries you most?"
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "form-control")
-        for name in ("sales_channels", "payment_methods"):
+        for name in ("sales_channels", "payment_methods", "main_cost_drivers"):
             self.fields[name].widget.attrs["class"] = "profile-checkboxes"
 
     def clean_year_started(self):

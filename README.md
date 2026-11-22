@@ -166,6 +166,20 @@ and the existing active-risk-limit plan quota still applies: if a plan's limit
 is reached partway through, the risks that fit are kept and the rest are
 reported as not saved.
 
+### Business-model-aware risk mapping
+
+If the organization has already filled in the fuller **Business Profile**
+page (`/business-profile/`) — revenue model, sales channels, payment methods,
+customer concentration, supplier reliance, and main cost drivers — Quick risk
+check automatically includes that business-model picture in what it sends to
+Claude, and asks it to prefer risks that stem from those specific details over
+generic sector risks. Each generated risk is tagged with
+`business_model_link`, a short phrase naming the specific business-model
+detail it came from (for example "Revenue model: one-off sales" or "Customer
+concentration"), shown on the quick-risk-check results and on the risk detail
+page so the connection between the business model and the risk is explicit
+rather than implied.
+
 This feature requires `ANTHROPIC_API_KEY` (and optionally a non-default
 `CLAUDE_MODEL`) in every environment, including production — it is not
 restricted to `DEBUG`. Set `DJANGO_AI_RISK_ANALYSIS_ENABLED=False` to disable
@@ -257,7 +271,8 @@ Safaricom sandbox and production verification before accepting live payments.
 ## Entrepreneur business profile
 
 Signed-in members can open **Business profile** to record their sector, Kenyan
-county, business size, customer and payment channels, supplier dependence, and
+county, business size, customer and payment channels, supplier dependence, how
+the business mainly earns money (revenue model), its main cost drivers, and
 main concerns. Profile details are scoped to the selected
 organization; administrators, risk managers, and analysts can update them,
 while viewers have read-only access. Annual turnover is optional and collected

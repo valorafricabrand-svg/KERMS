@@ -55,6 +55,7 @@
         <div class="profile-field"><label for="{{ form.staff_band.id_for_label }}">{{ form.staff_band.label }}</label>{{ form.staff_band }}{{ form.staff_band.errors }}<small class="profile-help">{{ form.staff_band.help_text }}</small></div>
         <div class="profile-field"><label for="{{ form.annual_turnover_band.id_for_label }}">{{ form.annual_turnover_band.label }}</label>{{ form.annual_turnover_band }}{{ form.annual_turnover_band.errors }}<small class="profile-help">{{ form.annual_turnover_band.help_text }}</small></div>
         <div class="profile-field"><label for="{{ form.operating_model.id_for_label }}">{{ form.operating_model.label }}</label>{{ form.operating_model }}{{ form.operating_model.errors }}<small class="profile-help">{{ form.operating_model.help_text }}</small></div>
+        <div class="profile-field"><label for="{{ form.revenue_model.id_for_label }}">{{ form.revenue_model.label }}</label>{{ form.revenue_model }}{{ form.revenue_model.errors }}<small class="profile-help">{{ form.revenue_model.help_text }}</small></div>
       </div>
     </section>
 
@@ -65,6 +66,7 @@
         <fieldset class="profile-field profile-choice-field"><legend>{{ form.payment_methods.label }}</legend>{{ form.payment_methods }}{{ form.payment_methods.errors }}<small class="profile-help">{{ form.payment_methods.help_text }}</small></fieldset>
         <div class="profile-field"><label for="{{ form.customer_concentration.id_for_label }}">How much do you rely on your biggest customer?</label>{{ form.customer_concentration }}{{ form.customer_concentration.errors }}{{ form.customer_concentration.help_text }}</div>
         <div class="profile-field"><label for="{{ form.supplier_reliance.id_for_label }}">How easy is it to replace a key supplier?</label>{{ form.supplier_reliance }}{{ form.supplier_reliance.errors }}{{ form.supplier_reliance.help_text }}</div>
+        <fieldset class="profile-field profile-choice-field"><legend>{{ form.main_cost_drivers.label }}</legend>{{ form.main_cost_drivers }}{{ form.main_cost_drivers.errors }}<small class="profile-help">{{ form.main_cost_drivers.help_text }}</small></fieldset>
       </div>
     </section>
 
