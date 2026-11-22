@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}AI onboarding demo | KERMS{% endblock %}
+{% block eyebrow %}Entrepreneur onboarding · local demo{% endblock %}
+{% block heading %}AI business and risk guidance{% endblock %}
+{% block actions %}<a class="button secondary" href="{% url 'business_profile' %}">Back to business profile</a>{% endblock %}
+{% block content %}
+<div class="ai-demo-page">
+  <section class="ai-demo-notice" role="note">
+    <strong>Fictional demo only — never enter real business information here.</strong>
+    <p>This local-only prototype sends a fixed, fictional farm profile and public climate measurements to {{ provider }}, and queries NASA POWER for climate context. It does not read or save your KERMS profile, write to the risk register, or provide a forecast. {{ provider_data_notice }}</p>
+    <p>AI suggestions can be incomplete or wrong. Verify any location-specific concern with reliable local sources and a qualified adviser before acting.</p>
+    <a href="{{ provider_terms_url }}" rel="noopener noreferrer" target="_blank">{{ provider_terms_label }}</a>
+    <span aria-hidden="true"> · </span>
+    <a href="https://power.larc.nasa.gov/docs/services/api/temporal/" rel="noopener noreferrer" target="_blank">NASA POWER climate data</a>
+  </section>
+
+  {% if error_message %}<div class="ai-demo-error" role="alert">{{ error_message }}</div>{% endif %}
+  {% if not api_key_configured %}
+  <section class="ai-demo-setup">
+    <h2>Configure a local {{ provider }} API key</h2>
+    {% if provider == "Claude" %}
+    <p>Get an API key from <a href="https://console.anthropic.com/" rel="noopener noreferrer" target="_blank">Anthropic Console</a> and add it to your untracked local <code>.env</code> file. Do not paste the key into chat, a template, or source code.</p>
+    {% else %}
+    <p>Get a key from <a href="https://aistudio.google.com/apikey" rel="noopener noreferrer" target="_blank">Google AI Studio</a> and add it to your untracked local <code>.env</code> file. Do not paste the key into chat, a template, or source code.</p>
+    {% endif %}
+    <pre><code>{{ api_key_env_var }}=your-key
+DJANGO_AI_ONBOARDING_DEMO_ENABLED=True</code></pre>
+    <p>Restart the development server after saving the environment variables. The {{ provider }} model configured for this demo is <code>{{ model }}</code>.</p>
+  </section>
+  {% endif %}
+
+  <section class="ai-demo-card">
+    <div>
+      <span class="ai-demo-kicker">Sample business</span>
+      <h2>Small mixed vegetable farm · Nyeri County</h2>
+      <p>Fictional, owner-managed farm selling fresh produce to local markets and a few small retailers. Assumed constraints: seasonal production, limited cash reserve, one main water source, and no confirmed backup supplier.</p>
+    </div>
+    <form method="post">
+      {% csrf_token %}
+      <label class="ai-demo-confirm">
+        <input type="checkbox" name="confirm_demo" required>
+        I understand this sends only the fictional sample and public climate data to third-party services.
+      </label>
+      <button class="button" type="submit" {% if not api_key_configured %}disabled{% endif %}>Generate sample analysis</button>
+      <p class="ai-demo-rate-note">Demo requests are limited to one per minute.</p>
+    </form>
+  </section>
+
+  {% if climate_context %}
+  <section class="ai-demo-card">
+    <div class="ai-demo-section-heading">
+      <div><span class="ai-demo-kicker">Historical climate context</span><h2>{{ climate_context.location }} · approximate demo point</h2></div>
+      <span class="ai-demo-source">{{ climate_context.source }}</span>
+    </div>
+    <p>NASA POWER reports a climatology for {{ climate_context.period }} at an elevation of approximately {{ climate_context.elevation_m|floatformat:0 }} m. These are historical climate averages, not a local hazard map, current conditions, or a forecast.</p>
+    <div class="ai-demo-table-wrap">
+      <table class="ai-demo-table">
+        <thead><tr><th>Month</th><th>Mean temperature (°C)</th><th>Mean daily precipitation (mm/day)</th></tr></thead>
+        <tbody>
+          {% for month in climate_context.months %}
+          <tr><th scope="row">{{ month.month }}</th><td>{{ month.mean_temperature_c|floatformat:1 }}</td><td>{{ month.mean_daily_precipitation_mm|floatformat:1 }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if analysis %}
+  <section class="ai-demo-card ai-demo-analysis">
+    <span class="ai-demo-kicker">AI-generated advisory · review before use</span>
+    <h2>How this sample business works</h2>
+    <p>{{ analysis.business_model_summary }}</p>
+    <h2>Geographic considerations</h2>
+    <p>{{ analysis.geographic_context }}</p>
+
+    <h2>Planning scenarios and responses</h2>
+    <div class="ai-demo-scenarios">
+      {% for scenario in analysis.scenarios %}
+      <article class="ai-demo-scenario">
+        <h3>{{ scenario.title }}</h3>
+        <p>{{ scenario.business_impact }}</p>
+        <div class="ai-demo-action-columns">
+          <div><h4>Early warning signs</h4><ul>{% for item in scenario.early_warning_signs %}<li>{{ item }}</li>{% endfor %}</ul></div>
+          <div><h4>Reduce the risk</h4><ul>{% for item in scenario.risk_reduction_actions %}<li>{{ item }}</li>{% endfor %}</ul></div>
+          <div><h4>If it happens</h4><ul>{% for item in scenario.response_actions %}<li>{{ item }}</li>{% endfor %}</ul></div>
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+
+    <h2>Practical priorities</h2>
+    <ol>{% for item in analysis.priority_actions %}<li>{{ item }}</li>{% endfor %}</ol>
+    <h2>What still needs checking</h2>
+    <ul>{% for item in analysis.uncertainties %}<li>{{ item }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -27,8 +27,10 @@
         <div class="profile-progress-track"><span style="width:{{ profile_completion }}%"></span></div>
         <small>Profile completeness only; not a risk rating.</small>
       </div>
-      <a class="button" href="/locations/?organization={{ organization.pk }}">Map business locations</a>
+      <a class="button" href="{% url 'quick_risk_check' %}?organization={{ organization.pk }}">Run a quick AI risk check</a>
+      <a class="button secondary" href="/locations/?organization={{ organization.pk }}">Map business locations</a>
       <a class="button secondary" href="/assessments/?organization={{ organization.pk }}">Open assessment registry</a>
+      {% if ai_demo_available %}<a class="button secondary" href="{% url 'ai_onboarding_demo' %}">Try the fictional AI onboarding demo</a>{% endif %}
     </div>
     </div>
   </div>

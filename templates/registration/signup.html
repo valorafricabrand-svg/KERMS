@@ -25,7 +25,7 @@
     <section class="auth-card" aria-labelledby="sign-up-title">
       <span class="auth-kicker">Create your workspace</span>
       <h1 id="sign-up-title">Set up a KERMS account.</h1>
-      <p class="auth-intro">Create a business workspace. You’ll need to verify your email address before signing in.</p>
+      <p class="auth-intro">Create a business workspace. {% if email_verification_required %}You’ll need to verify your email address before signing in.{% else %}You’ll be signed in as soon as your workspace is created.{% endif %}</p>
       {% if form.non_field_errors %}
       <div class="auth-error" role="alert">{{ form.non_field_errors }}</div>
       {% endif %}
@@ -83,7 +83,7 @@
 
         <button class="auth-submit" type="submit">Create workspace <span aria-hidden="true">→</span></button>
       </form>
-      <p class="auth-help">Already have access? <a href="{% url 'login' %}">Sign in instead</a>. Need another verification email? <a href="{% url 'resend_verification' %}">Resend it</a>.</p>
+      <p class="auth-help">Already have access? <a href="{% url 'login' %}">Sign in instead</a>{% if email_verification_required %}. Need another verification email? <a href="{% url 'resend_verification' %}">Resend it</a>{% endif %}.</p>
       <a class="auth-footer-link" href="{% url 'home' %}">← Return to KERMS.CO.KE</a>
     </section>
     <p class="auth-assurance">KERMS supports informed business decisions. It does not certify that a business is safe or risk-free.</p>

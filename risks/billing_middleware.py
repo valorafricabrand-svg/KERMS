@@ -15,6 +15,7 @@ from .models import (
 class BillingAccessMiddleware:
     exempt_paths = (
         "/admin/",
+        "/ai-onboarding-demo/",
         "/billing/",
         "/login/",
         "/logout/",
@@ -30,6 +31,7 @@ class BillingAccessMiddleware:
         ("/locations/", "locations"),
         ("/assessments/", "assessments"),
         ("/risks/", "risk_register"),
+        ("/quick-risk-check/", "risk_register"),
         ("/incidents/", "incidents"),
         ("/reports/", "reports"),
         ("/assets/", "assets"),

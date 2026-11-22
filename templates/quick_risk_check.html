@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Quick risk check | KERMS{% endblock %}
+{% block eyebrow %}Business risk · AI-assisted{% endblock %}
+{% block heading %}Quick risk check{% endblock %}
+{% block actions %}<a class="button secondary" href="{% url 'business_profile' %}?organization={{ organization.pk }}">Back to business profile</a>{% endblock %}
+{% block content %}
+<div class="profile-page">
+
+  <section class="card">
+    <h2>Tell us about your business, get suggested risks</h2>
+    <p>Enter your business name, location, business type, and a few key details. We send these details to Claude (Anthropic) to suggest realistic risks and practical ways to reduce them. Suggestions are saved to your risk register as drafts under your name — review, adjust, or remove each one before relying on it. This is advisory guidance, not a certified risk assessment.</p>
+    {% if not ai_configured %}
+    <div class="form-errors">AI risk analysis is not configured for this deployment yet. An administrator needs to set <code>ANTHROPIC_API_KEY</code> and keep <code>DJANGO_AI_RISK_ANALYSIS_ENABLED</code> enabled.</div>
+    {% endif %}
+  </section>
+
+  {% if error_message %}<div class="form-errors" role="alert">{{ error_message }}</div>{% endif %}
+
+  <form method="post" class="form-card profile-form">
+    {% csrf_token %}
+    <input type="hidden" name="organization" value="{{ organization.pk }}">
+    {% if form.non_field_errors %}<div class="form-errors">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="profile-fields-grid">
+      <div class="profile-field"><label for="{{ form.business_name.id_for_label }}">{{ form.business_name.label }}</label>{{ form.business_name }}{{ form.business_name.errors }}</div>
+      <div class="profile-field"><label for="{{ form.sector.id_for_label }}">{{ form.sector.label }}</label>{{ form.sector }}{{ form.sector.errors }}</div>
+      <div class="profile-field"><label for="{{ form.other_sector.id_for_label }}">{{ form.other_sector.label }}</label>{{ form.other_sector }}{{ form.other_sector.errors }}<small class="profile-help">{{ form.other_sector.help_text }}</small></div>
+      <div class="profile-field"><label for="{{ form.county.id_for_label }}">{{ form.county.label }}</label>{{ form.county }}{{ form.county.errors }}</div>
+    </div>
+    <div class="profile-field"><label for="{{ form.top_concerns.id_for_label }}">{{ form.top_concerns.label }}</label>{{ form.top_concerns }}{{ form.top_concerns.errors }}<small class="profile-help">{{ form.top_concerns.help_text }}</small></div>
+    <label>{{ form.confirm_ai }} {{ form.confirm_ai.label }}</label>{{ form.confirm_ai.errors }}
+    <div class="form-actions">
+      <button class="button" type="submit" {% if not ai_configured %}disabled{% endif %}>Generate suggested risks</button>
+      <small class="profile-help">Limited to one check per minute.</small>
+    </div>
+  </form>
+
+  {% if summary %}
+  <section class="card">
+    <span class="eyebrow">AI summary · review before use</span>
+    <p>{{ summary }}</p>
+  </section>
+  {% endif %}
+
+  {% if created_risks %}
+  <section class="card">
+    <div class="card-head"><h2>Added to your risk register</h2></div>
+    {% for risk in created_risks %}
+    <div class="treatment">
+      <div>
+        <strong><a href="{% url 'risk_detail' risk.pk %}">{{ risk.reference }} · {{ risk.title }}</a></strong>
+        <span>{{ risk.get_risk_type_display }} · Likelihood {{ risk.likelihood }} × Impact {{ risk.impact }} · <span class="badge {{ risk.rating|lower }}">{{ risk.rating }}</span></span>
+      </div>
+    </div>
+    {% endfor %}
+    <p><a class="button secondary" href="{% url 'risk_register' %}?organization={{ organization.pk }}">Review these in the risk register</a></p>
+  </section>
+  {% endif %}
+
+</div>
+{% endblock %}

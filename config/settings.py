@@ -21,6 +21,12 @@ if not SECRET_KEY:
     raise ImproperlyConfigured("DJANGO_SECRET_KEY must be configured.")
 
 DEBUG = env_bool("DJANGO_DEBUG", False)
+DB_HOST = os.getenv("DB_HOST", "").strip()
+if not DEBUG and not DB_HOST:
+    raise ImproperlyConfigured(
+        "Production requires PostgreSQL. Set DB_HOST, DB_NAME, DB_USER, "
+        "DB_PASSWORD, and DB_SSLMODE=require; SQLite is for local development only."
+    )
 ALLOWED_HOSTS = [
     host.strip()
     for host in os.getenv(
@@ -98,7 +104,7 @@ DATABASES = {
                 else {}
             ),
         }
-        if os.getenv("DB_HOST")
+        if DB_HOST
         else {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": Path(
@@ -148,6 +154,23 @@ LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/dashboard/"
 PUBLIC_SIGNUP_ENABLED = env_bool("DJANGO_PUBLIC_SIGNUP_ENABLED", DEBUG)
 PUBLIC_BASE_URL = os.getenv("DJANGO_PUBLIC_BASE_URL", "").rstrip("/")
+AI_ONBOARDING_DEMO_ENABLED = env_bool(
+    "DJANGO_AI_ONBOARDING_DEMO_ENABLED", DEBUG
+)
+AI_PROVIDER = os.getenv("AI_PROVIDER", "gemini").strip().lower()
+if AI_PROVIDER not in {"gemini", "claude"}:
+    raise ImproperlyConfigured(
+        "AI_PROVIDER must be either 'gemini' or 'claude'."
+    )
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-5")
+if AI_ONBOARDING_DEMO_ENABLED and not DEBUG:
+    raise ImproperlyConfigured(
+        "The synthetic AI onboarding demo must not be enabled outside development."
+    )
+AI_RISK_ANALYSIS_ENABLED = env_bool("DJANGO_AI_RISK_ANALYSIS_ENABLED", True)
 
 DARAJA_ENVIRONMENT = os.getenv("DARAJA_ENVIRONMENT", "sandbox").strip().lower()
 DARAJA_CONSUMER_KEY = os.getenv("DARAJA_CONSUMER_KEY", "")

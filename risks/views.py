@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model, login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.tokens import default_token_generator
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
 from django.db.models import Count, Q
@@ -15,7 +15,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
-from django.http import JsonResponse
+from django.http import Http404, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 import calendar
@@ -30,6 +30,12 @@ from decimal import Decimal, InvalidOperation
 from zoneinfo import ZoneInfo
 
 from .bot_services import evaluate_bot_transaction
+from .ai_onboarding_demo import (
+    AIOnboardingDemoError,
+    fetch_demo_climate_context,
+    generate_demo_analysis,
+)
+from .ai_risk_analysis import AIRiskAnalysisError, generate_business_risk_analysis
 
 from .forms import (
     AssuranceTestForm,
@@ -37,6 +43,7 @@ from .forms import (
     EntrepreneurAssessmentForm,
     SignUpForm,
     EntrepreneurAssessmentReviewForm,
+    QuickRiskCheckForm,
     FrameworkForm,
     FrameworkRequirementForm,
     GovernanceCommitteeForm,
@@ -507,6 +514,9 @@ def business_profile(request):
                 "organizations": organizations,
                 "organization": None,
                 "can_edit": False,
+                "ai_demo_available": (
+                    settings.DEBUG and settings.AI_ONBOARDING_DEMO_ENABLED
+                ),
             },
         )
 
@@ -547,7 +557,89 @@ def business_profile(request):
             "form": form,
             "can_edit": can_edit,
             "profile_completion": profile.profile_completion if profile else 0,
+            "ai_demo_available": (
+                settings.DEBUG and settings.AI_ONBOARDING_DEMO_ENABLED
+            ),
         },
+    )
+
+
+@login_required
+def ai_onboarding_demo(request):
+    if not settings.DEBUG or not settings.AI_ONBOARDING_DEMO_ENABLED:
+        raise Http404
+
+    if settings.AI_PROVIDER == "claude":
+        api_key_configured = bool(settings.ANTHROPIC_API_KEY)
+        api_key_env_var = "ANTHROPIC_API_KEY"
+        model = settings.CLAUDE_MODEL
+        provider = "Claude"
+        provider_terms_url = "https://www.anthropic.com/legal/commercial-terms"
+        provider_terms_label = "Anthropic commercial terms"
+        provider_data_notice = (
+            "Review Anthropic's terms for how API submissions are handled. "
+            "Do not use this prototype with real, confidential, or personal "
+            "business information."
+        )
+    else:
+        api_key_configured = bool(settings.GEMINI_API_KEY)
+        api_key_env_var = "GEMINI_API_KEY"
+        model = settings.GEMINI_MODEL
+        provider = "Gemini"
+        provider_terms_url = "https://ai.google.dev/gemini-api/terms"
+        provider_terms_label = "Gemini API data terms"
+        provider_data_notice = (
+            "The free Gemini API terms allow prompts to be used to improve "
+            "Google's products and reviewed by people. Do not use this "
+            "free-tier prototype with real, confidential, or personal business "
+            "information."
+        )
+
+    climate_context = None
+    analysis = None
+    error_message = None
+    response_status = 200
+    if request.method == "POST":
+        if request.POST.get("confirm_demo") != "on":
+            error_message = "Confirm that you understand this uses a fictional sample."
+        elif not api_key_configured:
+            error_message = (
+                f"Set {api_key_env_var} in your local .env file to try the AI demo."
+            )
+        else:
+            now = timezone.now().timestamp()
+            last_request = request.session.get("ai_demo_last_request", 0)
+            wait_seconds = 60 - int(now - last_request)
+            if wait_seconds > 0:
+                error_message = (
+                    f"Please wait {wait_seconds} seconds before generating another demo."
+                )
+                response_status = 429
+            else:
+                request.session["ai_demo_last_request"] = int(now)
+                try:
+                    climate_context = fetch_demo_climate_context()
+                    analysis = generate_demo_analysis(climate_context)
+                except AIOnboardingDemoError as error:
+                    error_message = str(error)
+                    response_status = 503
+
+    return render(
+        request,
+        "ai_onboarding_demo.html",
+        {
+            "analysis": analysis,
+            "climate_context": climate_context,
+            "error_message": error_message,
+            "api_key_configured": api_key_configured,
+            "api_key_env_var": api_key_env_var,
+            "model": model,
+            "provider": provider,
+            "provider_terms_url": provider_terms_url,
+            "provider_terms_label": provider_terms_label,
+            "provider_data_notice": provider_data_notice,
+        },
+        status=response_status,
     )
 
 
@@ -556,6 +648,159 @@ ASSESSMENT_EDITOR_ROLES = {
     OrganizationMembership.Role.RISK_MANAGER,
     OrganizationMembership.Role.ANALYST,
 }
+
+
+def _generate_ai_risk_reference(organization, used_references):
+    today = timezone.localdate().strftime("%Y%m%d")
+    counter = 1
+    while True:
+        candidate = f"AI-{today}-{counter:02d}"
+        if candidate not in used_references and not Risk.objects.filter(
+            organization=organization, reference=candidate
+        ).exists():
+            return candidate
+        counter += 1
+
+
+@login_required
+def quick_risk_check(request):
+    organizations = user_organizations(request)
+    organization = (
+        organizations.filter(pk=request.POST.get("organization") or request.GET.get("organization"))
+        .first()
+        or organizations.first()
+    )
+    if not organization:
+        messages.info(request, "Create a workspace before running a quick risk check.")
+        return redirect("business_profile")
+
+    if organization_role(request.user, organization) not in ASSESSMENT_EDITOR_ROLES:
+        raise PermissionDenied
+
+    profile = BusinessProfile.objects.filter(organization=organization).first()
+    created_risks = []
+    error_message = None
+    summary = None
+
+    if request.method == "POST":
+        form = QuickRiskCheckForm(request.POST)
+        if form.is_valid():
+            now = timezone.now().timestamp()
+            last_request = request.session.get("quick_risk_check_last_request", 0)
+            wait_seconds = 60 - int(now - last_request)
+            data = form.cleaned_data
+            new_name = data["business_name"].strip() or organization.name
+            name_taken = new_name != organization.name and Organization.objects.exclude(
+                pk=organization.pk
+            ).filter(name=new_name).exists()
+
+            if wait_seconds > 0:
+                error_message = (
+                    f"Please wait {wait_seconds} seconds before running another check."
+                )
+            elif name_taken:
+                error_message = "That business name is already in use. Choose a different name."
+            else:
+                request.session["quick_risk_check_last_request"] = int(now)
+                organization.name = new_name
+                organization.save(update_fields=["name"])
+                if profile is None:
+                    profile = BusinessProfile(organization=organization)
+                profile.sector = data["sector"]
+                profile.other_sector = data["other_sector"]
+                profile.county = data["county"]
+                profile.top_concerns = data["top_concerns"]
+                profile.updated_by = request.user
+                profile.save()
+
+                sector_label = dict(BusinessProfile.Sector.choices).get(
+                    data["sector"], data["sector"]
+                )
+                business_context = {
+                    "business_name": organization.name,
+                    "business_type": (
+                        data["other_sector"] or sector_label
+                        if data["sector"] == BusinessProfile.Sector.OTHER
+                        else sector_label
+                    ),
+                    "location": f"{data['county']} County, Kenya",
+                    "key_details": data["top_concerns"] or "No further details provided.",
+                }
+                try:
+                    analysis = generate_business_risk_analysis(business_context)
+                except AIRiskAnalysisError as error:
+                    error_message = str(error)
+                else:
+                    summary = analysis["summary"]
+                    used_references = set()
+                    now_ts = timezone.now()
+                    for risk_data in analysis["risks"]:
+                        reference = _generate_ai_risk_reference(organization, used_references)
+                        risk = Risk(
+                            organization=organization,
+                            reference=reference,
+                            title=risk_data["title"],
+                            description=risk_data["description"],
+                            risk_type=risk_data["risk_type"],
+                            owner=request.user,
+                            likelihood=risk_data["likelihood"],
+                            impact=risk_data["impact"],
+                            early_warning_indicator=risk_data["early_warning_indicator"],
+                            ai_generated=True,
+                            ai_generated_at=now_ts,
+                        )
+                        try:
+                            risk.full_clean()
+                            risk.save()
+                        except ValidationError:
+                            error_message = (
+                                f"Added {len(created_risks)} suggested risk(s); your plan's "
+                                "active risk limit stopped the rest from being saved. "
+                                "Close or upgrade to add more."
+                            )
+                            break
+                        used_references.add(reference)
+                        for mitigation in risk_data["mitigations"]:
+                            RiskTreatment.objects.create(risk=risk, action=mitigation[:255])
+                        created_risks.append(risk)
+                    if created_risks:
+                        messages.success(
+                            request,
+                            f"Added {len(created_risks)} AI-suggested risk(s) to your register for review.",
+                        )
+                        form = QuickRiskCheckForm(
+                            initial={
+                                "business_name": organization.name,
+                                "sector": profile.sector,
+                                "other_sector": profile.other_sector,
+                                "county": profile.county,
+                                "top_concerns": profile.top_concerns,
+                            }
+                        )
+    else:
+        form = QuickRiskCheckForm(
+            initial={
+                "business_name": organization.name,
+                "sector": profile.sector if profile else "",
+                "other_sector": profile.other_sector if profile else "",
+                "county": profile.county if profile else "",
+                "top_concerns": profile.top_concerns if profile else "",
+            }
+        )
+
+    return render(
+        request,
+        "quick_risk_check.html",
+        {
+            "organizations": organizations,
+            "organization": organization,
+            "form": form,
+            "created_risks": created_risks,
+            "summary": summary,
+            "error_message": error_message,
+            "ai_configured": bool(settings.ANTHROPIC_API_KEY) and settings.AI_RISK_ANALYSIS_ENABLED,
+        },
+    )
 
 
 def build_assessment_sections(responses, form=None):
@@ -920,7 +1165,11 @@ def signup(request):
             return render(
                 request,
                 "registration/signup.html",
-                {"form": form, "rate_limited": True},
+                {
+                    "form": form,
+                    "rate_limited": True,
+                    "email_verification_required": not settings.DEBUG,
+                },
                 status=429,
             )
         if request.POST.get("website", "").strip():
@@ -941,7 +1190,7 @@ def signup(request):
                         first_name=form.cleaned_data["first_name"].strip(),
                         last_name=form.cleaned_data["last_name"].strip(),
                     )
-                    user.is_active = False
+                    user.is_active = settings.DEBUG
                     user.save(update_fields=["is_active"])
                     organization = Organization.objects.create(
                         name=form.cleaned_data["organization_name"].strip(),
@@ -956,8 +1205,10 @@ def signup(request):
                         user=user,
                         terms_version=SIGNUP_TERMS_VERSION,
                         privacy_version=SIGNUP_PRIVACY_VERSION,
+                        verified_at=timezone.now() if settings.DEBUG else None,
                     )
-                    _send_verification_email(request, user)
+                    if not settings.DEBUG:
+                        _send_verification_email(request, user)
             except (OSError, smtplib.SMTPException):
                 logger.exception("Could not send account verification email.")
                 form.add_error(
@@ -970,9 +1221,20 @@ def signup(request):
                     "We could not create this account. Check the workspace details and try again.",
                 )
             else:
+                if settings.DEBUG:
+                    login(request, user)
+                    messages.success(request, "Your workspace is ready.")
+                    return redirect("dashboard")
                 return render(request, "registration/verification_pending.html")
 
-    return render(request, "registration/signup.html", {"form": form})
+    return render(
+        request,
+        "registration/signup.html",
+        {
+            "form": form,
+            "email_verification_required": not settings.DEBUG,
+        },
+    )
 
 
 def resend_verification(request):

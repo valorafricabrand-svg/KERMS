@@ -188,6 +188,62 @@ class BusinessProfileForm(forms.ModelForm):
         return cleaned
 
 
+class QuickRiskCheckForm(forms.Form):
+    business_name = forms.CharField(
+        max_length=160,
+        label="Business name",
+        widget=forms.TextInput(attrs={"placeholder": "e.g. Wanjiru Fresh Produce"}),
+    )
+    sector = forms.ChoiceField(
+        choices=BusinessProfile.Sector.choices,
+        label="Business type",
+    )
+    other_sector = forms.CharField(
+        max_length=100,
+        required=False,
+        label="Your business type",
+        help_text="Fill this in if you selected Other.",
+    )
+    county = forms.ChoiceField(
+        choices=[("", "Select a county")] + BusinessProfile.COUNTY_CHOICES,
+        label="Location (county)",
+    )
+    top_concerns = forms.CharField(
+        required=False,
+        label="A few key details",
+        help_text=(
+            "Optional. For example: what you sell, how many staff, your biggest worry, "
+            "or anything else that might affect your risks."
+        ),
+        widget=forms.Textarea(
+            attrs={
+                "rows": 3,
+                "placeholder": "What should we know about how this business runs?",
+            }
+        ),
+    )
+    confirm_ai = forms.BooleanField(
+        required=True,
+        label=(
+            "I understand this sends the details above to an AI service to generate "
+            "suggested risks, and that the results need my review before I rely on them."
+        ),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-control")
+
+    def clean(self):
+        cleaned = super().clean()
+        if cleaned.get("sector") == BusinessProfile.Sector.OTHER and not cleaned.get(
+            "other_sector"
+        ):
+            self.add_error("other_sector", "Tell us what kind of business you run.")
+        return cleaned
+
+
 class EntrepreneurAssessmentForm(forms.ModelForm):
     class Meta:
         model = EntrepreneurAssessment

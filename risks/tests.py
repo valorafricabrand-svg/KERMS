@@ -2,16 +2,22 @@ import hashlib
 import json
 from datetime import timedelta
 from decimal import Decimal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from smtplib import SMTPException
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from django.contrib.auth import get_user_model
 from django.core import mail
-from django.test import TestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
+from .ai_onboarding_demo import (
+    AIOnboardingDemoError,
+    fetch_demo_climate_context,
+    generate_demo_analysis,
+)
+from .ai_risk_analysis import AIRiskAnalysisError, generate_business_risk_analysis
 from .assessment_questions import ASSESSMENT_QUESTION_KEYS
 from .models import (
     ApiCredential,
@@ -367,14 +373,17 @@ class RiskPlatformTests(TestCase):
             response, f"{reverse('login')}?next={reverse('dashboard')}"
         )
 
+    @override_settings(PUBLIC_SIGNUP_ENABLED=True)
     def test_public_home_introduces_kerms_without_exposing_workspace_data(self):
         response = self.client.get(reverse("home"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "KERMS.CO.KE")
         self.assertContains(response, "Kenya Enterprise Risk Management System")
-        self.assertContains(response, "Sign in to KERMS")
-        self.assertContains(response, f"{reverse('login')}?next={reverse('dashboard')}")
+        self.assertNotContains(response, "Sign in")
+        self.assertContains(response, "Create account")
+        self.assertContains(response, reverse("signup"))
+        self.assertNotContains(response, f"{reverse('login')}?next={reverse('dashboard')}")
         self.assertContains(response, "Show next workflow steps")
         self.assertContains(response, "Use the arrows to follow each step")
         self.assertNotContains(response, "CGS Financial Services")
@@ -400,7 +409,7 @@ class RiskPlatformTests(TestCase):
         response = self.client.post(reverse("logout"))
 
         self.assertRedirects(response, reverse("home"))
-        self.assertContains(self.client.get(reverse("home")), "Sign in to KERMS")
+        self.assertNotContains(self.client.get(reverse("home")), "Sign in")
 
     def test_authenticated_public_home_links_to_platform_workspace(self):
         self.client.force_login(self.user)
@@ -415,8 +424,14 @@ class RiskPlatformTests(TestCase):
         response = self.client.get(reverse("business_profile"))
         self.assertEqual(response.status_code, 302)
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
     def test_signup_requires_email_verification_before_account_access(self):
+        signup_page = self.client.get(reverse("signup"))
+        self.assertContains(signup_page, "verify your email address")
+
         response = self.client.post(
             reverse("signup"),
             {
@@ -473,6 +488,33 @@ class RiskPlatformTests(TestCase):
         self.assertTrue(verified.wsgi_request.user.is_authenticated)
         reused_link = self.client.post(verify_path)
         self.assertEqual(reused_link.status_code, 400)
+
+    @override_settings(DEBUG=True, PUBLIC_SIGNUP_ENABLED=True)
+    def test_local_signup_skips_email_verification_and_logs_in(self):
+        signup_page = self.client.get(reverse("signup"))
+        self.assertContains(signup_page, "signed in as soon as your workspace is created")
+
+        response = self.client.post(
+            reverse("signup"),
+            {
+                "first_name": "Ada",
+                "last_name": "Mwangi",
+                "username": "ada-local",
+                "email": "ada-local@example.com",
+                "password1": "StrongPass!123",
+                "password2": "StrongPass!123",
+                "organization_name": "Ada Local Group",
+                "organization_code": "ADA-LOCAL",
+                "terms_accepted": "on",
+            },
+        )
+
+        user = get_user_model().objects.get(username="ada-local")
+        self.assertRedirects(response, reverse("dashboard"))
+        self.assertTrue(user.is_active)
+        self.assertIsNotNone(user.signup_consent.verified_at)
+        self.assertTrue(response.wsgi_request.user.is_authenticated)
+        self.assertEqual(mail.outbox, [])
 
     def test_signup_requires_terms_and_a_validated_password(self):
         response = self.client.post(
@@ -545,7 +587,10 @@ class RiskPlatformTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Registration is by invitation")
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(
+        DEBUG=False,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+    )
     @patch("risks.views.send_mail", side_effect=SMTPException("mail unavailable"))
     def test_signup_rolls_back_account_when_verification_email_fails(self, send_mail_mock):
         with self.assertLogs("risks.views", level="ERROR"):
@@ -1717,3 +1762,451 @@ class RiskPlatformTests(TestCase):
         self.assertEqual(response.status_code, 302)
         scenario = StressScenario.objects.get(name="Mobile money outage")
         self.assertEqual(scenario.organization, other_organization)
+
+    @override_settings(
+        DEBUG=True,
+        AI_ONBOARDING_DEMO_ENABLED=True,
+        GEMINI_API_KEY="demo-key",
+    )
+    @patch("risks.views.generate_demo_analysis")
+    @patch("risks.views.fetch_demo_climate_context")
+    def test_ai_onboarding_demo_uses_fictional_context_and_rate_limits(
+        self, fetch_climate, generate_analysis
+    ):
+        self.client.force_login(self.user)
+        BusinessProfile.objects.create(
+            organization=self.organization,
+            sector=BusinessProfile.Sector.FINANCE,
+            top_concerns="PRIVATE ACTUAL BUSINESS DETAILS",
+        )
+        climate_context = {
+            "location": "Nyeri County, Kenya",
+            "elevation_m": 2100,
+            "period": "2001-2025",
+            "months": [
+                {
+                    "month": "JAN",
+                    "mean_temperature_c": 16.8,
+                    "mean_daily_precipitation_mm": 1.5,
+                }
+            ],
+            "source": "NASA POWER Climatology API",
+        }
+        analysis = {
+            "business_model_summary": "A fictional sample farm.",
+            "geographic_context": "Historical climate context only.",
+            "scenarios": [
+                {
+                    "title": "Water interruption",
+                    "business_impact": "Production could be delayed.",
+                    "early_warning_signs": ["Water source level falls."],
+                    "risk_reduction_actions": ["Track water use."],
+                    "response_actions": ["Prioritize essential crops."],
+                }
+            ],
+            "priority_actions": ["Review water storage."],
+            "uncertainties": ["Local hazard exposure needs verification."],
+        }
+        fetch_climate.return_value = climate_context
+        generate_analysis.return_value = analysis
+
+        response = self.client.post(
+            reverse("ai_onboarding_demo"), {"confirm_demo": "on"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Water interruption")
+        self.assertNotContains(response, "PRIVATE ACTUAL BUSINESS DETAILS")
+        fetch_climate.assert_called_once_with()
+        generate_analysis.assert_called_once_with(climate_context)
+        self.assertFalse(Risk.objects.filter(organization=self.organization).exists())
+
+        limited_response = self.client.post(
+            reverse("ai_onboarding_demo"), {"confirm_demo": "on"}
+        )
+        self.assertEqual(limited_response.status_code, 429)
+        self.assertContains(limited_response, "Please wait", status_code=429)
+        self.assertEqual(generate_analysis.call_count, 1)
+
+    @override_settings(
+        DEBUG=True,
+        AI_ONBOARDING_DEMO_ENABLED=True,
+        GEMINI_API_KEY="",
+    )
+    @patch("risks.views.generate_demo_analysis")
+    @patch("risks.views.fetch_demo_climate_context")
+    def test_ai_onboarding_demo_requires_acknowledgement_and_api_key(
+        self, fetch_climate, generate_analysis
+    ):
+        self.client.force_login(self.user)
+
+        response = self.client.post(reverse("ai_onboarding_demo"), {})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Confirm that you understand")
+        fetch_climate.assert_not_called()
+        generate_analysis.assert_not_called()
+
+        acknowledged = self.client.post(
+            reverse("ai_onboarding_demo"), {"confirm_demo": "on"}
+        )
+        self.assertContains(acknowledged, "Set GEMINI_API_KEY")
+        fetch_climate.assert_not_called()
+
+    @override_settings(
+        DEBUG=True,
+        AI_ONBOARDING_DEMO_ENABLED=True,
+        AI_PROVIDER="claude",
+        ANTHROPIC_API_KEY="claude-test-key",
+        CLAUDE_MODEL="claude-test-model",
+    )
+    @patch("risks.views.generate_demo_analysis")
+    @patch("risks.views.fetch_demo_climate_context")
+    def test_ai_onboarding_demo_uses_claude_configuration(
+        self, fetch_climate, generate_analysis
+    ):
+        self.client.force_login(self.user)
+        fetch_climate.return_value = {"location": "Nyeri County, Kenya"}
+        generate_analysis.return_value = {
+            "business_model_summary": "A fictional sample farm.",
+            "geographic_context": "Historical climate context only.",
+            "scenarios": [],
+            "priority_actions": [],
+            "uncertainties": [],
+        }
+
+        page = self.client.get(reverse("ai_onboarding_demo"))
+
+        self.assertContains(page, "Anthropic commercial terms", status_code=200)
+        self.assertTrue(page.context["api_key_configured"])
+        self.assertEqual(page.context["model"], "claude-test-model")
+
+        response = self.client.post(
+            reverse("ai_onboarding_demo"), {"confirm_demo": "on"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        fetch_climate.assert_called_once_with()
+        generate_analysis.assert_called_once_with(fetch_climate.return_value)
+
+    @override_settings(DEBUG=False, AI_ONBOARDING_DEMO_ENABLED=True)
+    def test_ai_onboarding_demo_is_unavailable_outside_development(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(reverse("ai_onboarding_demo"))
+
+        self.assertEqual(response.status_code, 404)
+
+    @override_settings(ANTHROPIC_API_KEY="test-anthropic-key")
+    @patch("risks.views.generate_business_risk_analysis")
+    def test_quick_risk_check_creates_draft_risks_from_real_profile(
+        self, generate_analysis
+    ):
+        self.client.force_login(self.user)
+        generate_analysis.return_value = {
+            "summary": "This retail business faces theft and supplier risks.",
+            "risks": [
+                {
+                    "title": "Inventory theft at point of sale",
+                    "description": "Small high-value stock is easy to pocket.",
+                    "risk_type": "operational",
+                    "likelihood": 4,
+                    "impact": 3,
+                    "early_warning_indicator": "Rising stock discrepancies",
+                    "mitigations": ["Install basic CCTV", "Reconcile stock weekly"],
+                }
+            ],
+        }
+
+        response = self.client.post(
+            reverse("quick_risk_check"),
+            {
+                "organization": self.organization.pk,
+                "business_name": "Test Bank",
+                "sector": BusinessProfile.Sector.RETAIL,
+                "other_sector": "",
+                "county": "Nairobi",
+                "top_concerns": "Sells electronics, 3 staff.",
+                "confirm_ai": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Inventory theft at point of sale")
+        generate_analysis.assert_called_once()
+        business_context = generate_analysis.call_args.args[0]
+        self.assertEqual(business_context["business_name"], "Test Bank")
+        self.assertEqual(business_context["location"], "Nairobi County, Kenya")
+
+        risk = Risk.objects.get(organization=self.organization)
+        self.assertTrue(risk.ai_generated)
+        self.assertEqual(risk.owner, self.user)
+        self.assertEqual(risk.risk_type, "operational")
+        self.assertEqual(risk.treatments.count(), 2)
+
+        profile = BusinessProfile.objects.get(organization=self.organization)
+        self.assertEqual(profile.sector, BusinessProfile.Sector.RETAIL)
+        self.assertEqual(profile.county, "Nairobi")
+
+    def test_quick_risk_check_requires_editor_role(self):
+        viewer = get_user_model().objects.create_user("viewer-user", "viewer@example.com", "test-password")
+        OrganizationMembership.objects.create(
+            user=viewer, organization=self.organization, role="viewer"
+        )
+        self.client.force_login(viewer)
+
+        response = self.client.get(
+            f"{reverse('quick_risk_check')}?organization={self.organization.pk}"
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    @override_settings(ANTHROPIC_API_KEY="")
+    def test_quick_risk_check_reports_missing_api_key_without_crashing(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("quick_risk_check"),
+            {
+                "organization": self.organization.pk,
+                "business_name": "Test Bank",
+                "sector": BusinessProfile.Sector.RETAIL,
+                "other_sector": "",
+                "county": "Nairobi",
+                "top_concerns": "",
+                "confirm_ai": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "not configured")
+        self.assertFalse(Risk.objects.filter(organization=self.organization).exists())
+
+
+class AIOnboardingDemoServiceTests(SimpleTestCase):
+    @patch("risks.ai_onboarding_demo.urlopen")
+    def test_climate_request_uses_fixed_demo_coordinates(self, urlopen_mock):
+        parameters = {
+            "T2M": {month: 16.0 for month in (
+                "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+            )},
+            "PRECTOTCORR": {month: 2.0 for month in (
+                "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+                "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+            )},
+        }
+        response_payload = {
+            "properties": {"parameter": parameters},
+            "geometry": {"coordinates": [36.95, -0.42, 2100]},
+            "header": {"range": "2001-2025"},
+        }
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            response_payload
+        ).encode("utf-8")
+        urlopen_mock.return_value = response
+
+        result = fetch_demo_climate_context()
+
+        request = urlopen_mock.call_args.args[0]
+        query = parse_qs(urlsplit(request.full_url).query)
+        self.assertEqual(query["latitude"], ["-0.42"])
+        self.assertEqual(query["longitude"], ["36.95"])
+        self.assertEqual(len(result["months"]), 12)
+        self.assertEqual(result["elevation_m"], 2100.0)
+
+    @override_settings(GEMINI_API_KEY="test-api-key")
+    @patch("risks.ai_onboarding_demo.urlopen")
+    def test_gemini_request_contains_only_the_fixed_sample_and_climate_data(
+        self, urlopen_mock
+    ):
+        response_analysis = {
+            "business_model_summary": "A fictional sample farm.",
+            "geographic_context": "Historical climate averages only.",
+            "scenarios": [
+                {
+                    "title": "Water interruption",
+                    "business_impact": "Production could be delayed.",
+                    "early_warning_signs": ["Water availability falls."],
+                    "risk_reduction_actions": ["Track water use."],
+                    "response_actions": ["Prioritize essential crops."],
+                }
+            ],
+            "priority_actions": ["Review water storage."],
+            "uncertainties": ["Local hazard exposure needs verification."],
+        }
+        api_response = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [{"text": json.dumps(response_analysis)}]
+                    }
+                }
+            ]
+        }
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            api_response
+        ).encode("utf-8")
+        urlopen_mock.return_value = response
+        climate_context = {
+            "location": "Nyeri County, Kenya",
+            "months": [{"month": "JAN", "mean_temperature_c": 16.0}],
+        }
+
+        result = generate_demo_analysis(climate_context)
+
+        request = urlopen_mock.call_args.args[0]
+        request_headers = {
+            name.lower(): value for name, value in request.header_items()
+        }
+        request_body = json.loads(request.data)
+        prompt = json.loads(request_body["contents"][0]["parts"][0]["text"])
+        self.assertEqual(request_headers["x-goog-api-key"], "test-api-key")
+        self.assertNotIn("test-api-key", request.full_url)
+        self.assertEqual(prompt["location"], "Nyeri County, Kenya")
+        self.assertEqual(prompt["historical_climate_context"], climate_context)
+        self.assertEqual(
+            prompt["fictional_business"]["type"],
+            "fictional small mixed vegetable farm",
+        )
+        self.assertEqual(result["scenarios"][0]["title"], "Water interruption")
+
+    @override_settings(
+        AI_PROVIDER="claude",
+        ANTHROPIC_API_KEY="test-anthropic-key",
+        CLAUDE_MODEL="claude-test-model",
+    )
+    @patch("risks.ai_onboarding_demo.anthropic.Anthropic")
+    def test_claude_request_uses_fixed_sample_and_validates_json(
+        self, anthropic_client
+    ):
+        response_analysis = {
+            "business_model_summary": "A fictional sample farm.",
+            "geographic_context": "Historical climate averages only.",
+            "scenarios": [
+                {
+                    "title": "Water interruption",
+                    "business_impact": "Production could be delayed.",
+                    "early_warning_signs": ["Water availability falls."],
+                    "risk_reduction_actions": ["Track water use."],
+                    "response_actions": ["Prioritize essential crops."],
+                }
+            ],
+            "priority_actions": ["Review water storage."],
+            "uncertainties": ["Local hazard exposure needs verification."],
+        }
+        client = anthropic_client.return_value
+        client.messages.create.return_value.content = [
+            MagicMock(type="text", text=json.dumps(response_analysis))
+        ]
+        climate_context = {
+            "location": "Nyeri County, Kenya",
+            "months": [{"month": "JAN", "mean_temperature_c": 16.0}],
+        }
+
+        result = generate_demo_analysis(climate_context)
+
+        anthropic_client.assert_called_once_with(
+            api_key="test-anthropic-key", timeout=30
+        )
+        request = client.messages.create.call_args.kwargs
+        self.assertEqual(request["model"], "claude-test-model")
+        prompt = json.loads(request["messages"][0]["content"])
+        self.assertEqual(prompt["location"], "Nyeri County, Kenya")
+        self.assertEqual(prompt["historical_climate_context"], climate_context)
+        self.assertEqual(result["scenarios"][0]["title"], "Water interruption")
+
+    @override_settings(
+        AI_PROVIDER="claude",
+        ANTHROPIC_API_KEY="",
+    )
+    def test_claude_requires_its_api_key(self):
+        with self.assertRaisesRegex(
+            AIOnboardingDemoError, "Set ANTHROPIC_API_KEY"
+        ):
+            generate_demo_analysis({})
+
+
+class AIRiskAnalysisServiceTests(SimpleTestCase):
+    @override_settings(ANTHROPIC_API_KEY="test-anthropic-key", CLAUDE_MODEL="claude-test-model")
+    @patch("risks.ai_risk_analysis.anthropic.Anthropic")
+    def test_generate_business_risk_analysis_validates_and_returns_risks(
+        self, anthropic_client
+    ):
+        response_analysis = {
+            "summary": "A short retail business risk overview.",
+            "risks": [
+                {
+                    "title": "Inventory theft",
+                    "description": "Small valuable stock is easy to pocket.",
+                    "risk_type": "operational",
+                    "likelihood": 4,
+                    "impact": 3,
+                    "early_warning_indicator": "Stock discrepancies rise",
+                    "mitigations": ["Install CCTV", "Reconcile stock weekly"],
+                }
+            ],
+        }
+        client = anthropic_client.return_value
+        client.messages.create.return_value.content = [
+            MagicMock(type="text", text=json.dumps(response_analysis))
+        ]
+        business_context = {
+            "business_name": "Test Bank",
+            "business_type": "Retail and shops",
+            "location": "Nairobi County, Kenya",
+            "key_details": "Sells electronics, 3 staff.",
+        }
+
+        result = generate_business_risk_analysis(business_context)
+
+        anthropic_client.assert_called_once_with(
+            api_key="test-anthropic-key", timeout=30
+        )
+        request = client.messages.create.call_args.kwargs
+        self.assertEqual(request["model"], "claude-test-model")
+        prompt = json.loads(request["messages"][0]["content"])
+        self.assertEqual(prompt["business"], business_context)
+        self.assertEqual(result["risks"][0]["title"], "Inventory theft")
+        self.assertEqual(result["risks"][0]["likelihood"], 4)
+
+    @override_settings(ANTHROPIC_API_KEY="")
+    def test_generate_business_risk_analysis_requires_api_key(self):
+        with self.assertRaisesRegex(
+            AIRiskAnalysisError, "not configured"
+        ):
+            generate_business_risk_analysis({})
+
+    @override_settings(ANTHROPIC_API_KEY="test-anthropic-key", AI_RISK_ANALYSIS_ENABLED=False)
+    def test_generate_business_risk_analysis_respects_disabled_flag(self):
+        with self.assertRaisesRegex(AIRiskAnalysisError, "disabled"):
+            generate_business_risk_analysis({})
+
+    @override_settings(ANTHROPIC_API_KEY="test-anthropic-key")
+    @patch("risks.ai_risk_analysis.anthropic.Anthropic")
+    def test_generate_business_risk_analysis_rejects_unknown_risk_type(
+        self, anthropic_client
+    ):
+        response_analysis = {
+            "summary": "Overview.",
+            "risks": [
+                {
+                    "title": "Bad risk type",
+                    "description": "Has an unsupported risk_type value.",
+                    "risk_type": "not_a_real_type",
+                    "likelihood": 2,
+                    "impact": 2,
+                    "early_warning_indicator": "",
+                    "mitigations": ["Do something"],
+                }
+            ],
+        }
+        client = anthropic_client.return_value
+        client.messages.create.return_value.content = [
+            MagicMock(type="text", text=json.dumps(response_analysis))
+        ]
+
+        with self.assertRaisesRegex(AIRiskAnalysisError, "risk type"):
+            generate_business_risk_analysis({})

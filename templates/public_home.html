@@ -24,9 +24,8 @@
       <a href="#platform">The platform</a>
       {% if request.user.is_authenticated %}
       <a class="site-nav-cta" href="{% url 'dashboard' %}">Open platform <span aria-hidden="true">↗</span></a>
-      {% else %}
-      <a href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in</a>
-      <a href="{% url 'signup' %}">{% if public_signup_enabled %}Create account{% else %}Request access{% endif %}</a>
+      {% elif public_signup_enabled %}
+      <a href="{% url 'signup' %}">Create account</a>
       {% endif %}
     </nav>
   </header>
@@ -40,14 +39,6 @@
         <div class="site-hero-actions">
           {% if request.user.is_authenticated %}
           <a class="site-button site-button-primary" href="{% url 'dashboard' %}">Open your workspace <span aria-hidden="true">→</span></a>
-          {% else %}
-          {% if public_signup_enabled %}
-          <a class="site-button site-button-primary" href="{% url 'signup' %}">Create your workspace <span aria-hidden="true">→</span></a>
-          <a class="site-button site-button-secondary" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS</a>
-          {% else %}
-          <a class="site-button site-button-primary" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
-          <a class="site-button site-button-secondary" href="{% url 'signup' %}">Request workspace access</a>
-          {% endif %}
           {% endif %}
           <a class="site-button site-button-secondary" href="#how-it-works">See how it works</a>
         </div>
@@ -139,8 +130,6 @@
         <p class="site-honesty-note">Map pins show locations you enter; they do not detect hazards. Prompts support discussion and do not replace verified local information or professional advice.</p>
         {% if request.user.is_authenticated %}
         <a class="site-text-link" href="{% url 'dashboard' %}">Continue to your workspace <span aria-hidden="true">→</span></a>
-        {% else %}
-        <a class="site-text-link" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
         {% endif %}
       </div>
     </section>
@@ -149,8 +138,6 @@
       <div><span class="site-section-kicker">Start with one useful step</span><h2>Build confidence in the decisions ahead.</h2><p>Make your business context clearer. Choose what to work on next.</p></div>
       {% if request.user.is_authenticated %}
       <a class="site-button site-button-light" href="{% url 'dashboard' %}">Open KERMS <span aria-hidden="true">→</span></a>
-      {% else %}
-      <a class="site-button site-button-light" href="{% url 'login' %}?next={% url 'dashboard' %}">Sign in to KERMS <span aria-hidden="true">→</span></a>
       {% endif %}
     </section>
   </main>

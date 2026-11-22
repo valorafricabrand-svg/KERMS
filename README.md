@@ -36,11 +36,24 @@ files, or credentials.
 
 ### Render deployment
 
-When deploying with the repository Dockerfile, configure the required Django
-and PostgreSQL environment variables in Render. Connect to the database using
-its internal connection details and set `DB_SSLMODE=require`. The container
-startup applies database migrations, collects the static-file manifest, then
-starts Gunicorn on Render's assigned `PORT` (falling back to port 10000).
+Create a Render PostgreSQL database and link it to the web service. Configure
+the web service with these PostgreSQL environment variables using the
+database's **internal** connection details:
+
+```text
+DB_HOST=<internal hostname>
+DB_PORT=5432
+DB_NAME=<database name>
+DB_USER=<database user>
+DB_PASSWORD=<database password>
+DB_SSLMODE=require
+```
+
+Set `DJANGO_DEBUG=False`. Production refuses to start if `DB_HOST` is missing,
+so it cannot silently try to use a local SQLite file on Render. Do not set
+`SQLITE_PATH` for production. The container startup applies database
+migrations, collects the static-file manifest, then starts Gunicorn on
+Render's assigned `PORT` (falling back to port 10000).
 Ensure Render is deploying the latest commit containing the Dockerfile change;
 if the service uses Render's native Python runtime instead of Docker, configure
 the equivalent build and start commands in the service settings.
@@ -67,23 +80,111 @@ DEFAULT_FROM_EMAIL=accounts@your-domain
 
 ## Secure account creation
 
-When enabled, self-service registration creates an inactive account and a
-workspace administrator membership, then sends a single-use email-verification
-link that expires after three days. A database-backed limit allows five
+Outside local development (`DEBUG=False`), self-service registration creates
+an inactive account and a workspace administrator membership, then sends a
+single-use email-verification link that expires after three days. Local
+development activates the account and signs it in immediately for demo use;
+never enable `DEBUG` in production. A database-backed limit allows five
 registration or resend attempts per source IP and per email address per hour;
-a honeypot field silently discards basic automated
-submissions. Ensure the trusted ingress configures `REMOTE_ADDR` as the real
-client address; KERMS intentionally does not trust a caller-supplied
-`X-Forwarded-For` header. Passwords must be at least 12 characters and are
-checked against Django's configured validators. Terms acceptance is required
-and its version and timestamp are recorded with the account.
+a honeypot field silently discards basic automated submissions. Ensure the
+trusted ingress configures `REMOTE_ADDR` as the real client address; KERMS
+intentionally does not trust a caller-supplied `X-Forwarded-For` header.
+Passwords must be at least 12 characters and are checked against Django's
+configured validators. Terms acceptance is required and its version and
+timestamp are recorded with the account.
 
-Production registration is invitation-only by default. Administrators can
-provision users and organization memberships through Django admin. The signup
-form and policies are an initial service notice, not a substitute for complete
-operator contact details and legal review. Multi-factor authentication,
-organization invitations, and advanced bot detection should be added before
-enterprise onboarding.
+### Admin-only account provisioning
+
+Email is not needed when administrators create accounts directly. Keep
+`DJANGO_PUBLIC_SIGNUP_ENABLED=False` (or omit it in production, where it
+defaults to false) and do not enable public self-service registration. Create
+the first administrator with `python manage.py createsuperuser` (or
+`docker compose exec web python manage.py createsuperuser` for the Compose
+deployment), then sign in at `/admin/`.
+
+For each new workspace, create its Organization, add the user under
+**Authentication and Authorization → Users**, and add an
+OrganizationMembership linking that user to the organization with the
+appropriate role. Make sure the account is active. Set a strong initial
+password and deliver it to the user through a separate secure channel; the
+password-reset flow still requires email. Existing users can be activated or
+deactivated in Django admin without sending verification email.
+
+The signup form and policies are an initial service notice, not a substitute
+for complete operator contact details and legal review. Multi-factor
+authentication, organization invitations, and advanced bot detection should
+be added before enterprise onboarding.
+
+## Quick risk check (AI-assisted)
+
+**Quick risk check** (`/quick-risk-check/`) is the production feature for
+turning a short business description into draft risk-register entries. A user
+with the Administrator, Risk Manager, or Analyst role enters the business
+name, business type (sector), location (county), and a few free-text key
+details, confirms consent, and KERMS sends only those details to Claude
+(Anthropic) to generate 3–7 realistic risks, each with a likelihood/impact
+rating, an early warning indicator, and 2–5 practical mitigation actions.
+
+The business name, sector, county, and key details are saved to the
+organization's real `BusinessProfile` (the same record used elsewhere in
+KERMS). Each AI-suggested risk is created in the risk register with
+`ai_generated=True`, owned by the user who ran the check, with its mitigations
+added as draft treatment actions — all in `Risk.Status.IDENTIFIED`, ready for
+review, editing, or deletion like any other risk. The register and risk detail
+pages show an "AI" badge on these entries so they are never mistaken for a
+human-reviewed assessment. Requests are limited to one per minute per session,
+and the existing active-risk-limit plan quota still applies: if a plan's limit
+is reached partway through, the risks that fit are kept and the rest are
+reported as not saved.
+
+This feature requires `ANTHROPIC_API_KEY` (and optionally a non-default
+`CLAUDE_MODEL`) in every environment, including production — it is not
+restricted to `DEBUG`. Set `DJANGO_AI_RISK_ANALYSIS_ENABLED=False` to disable
+it without removing the key. Review the
+[Anthropic commercial terms](https://www.anthropic.com/legal/commercial-terms)
+for how submitted business details are handled before enabling this in
+production.
+
+## Local AI onboarding prototype
+
+The AI onboarding demo is a local-development prototype, not an integration
+with real entrepreneur profiles. It uses a fixed fictional vegetable farm near
+Nyeri and requests historical climate averages for an approximate point from
+the NASA POWER Climatology API. It then asks Gemini (the default) or Claude for a business-model
+summary, planning scenarios, warning signs, and practical risk-reduction and
+response actions. Results are advisory, are not saved, and are not added to
+the risk register.
+
+To try it, choose a provider and add its API key to your untracked local
+`.env` file. Gemini uses a key from [Google AI Studio](https://aistudio.google.com/apikey);
+Claude uses an API key from [Anthropic Console](https://console.anthropic.com/).
+The provider defaults to Gemini; set `AI_PROVIDER=claude` to use Claude:
+
+```text
+DJANGO_DEBUG=True
+DJANGO_AI_ONBOARDING_DEMO_ENABLED=True
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-2.5-flash
+```
+
+For Claude, set `AI_PROVIDER=claude`, `ANTHROPIC_API_KEY=your-key`, and
+optionally `CLAUDE_MODEL=claude-sonnet-4-5`.
+
+Restart Django and open **Business profile → Try the fictional AI onboarding
+demo**. NASA POWER does not require an API key. The demo sends only its fixed
+fictional sample and public climate measurements to the selected provider; it
+never reads saved KERMS profile or location data. Review the selected provider's
+terms before use, and do not send real, confidential, or personal business
+information. Keep API keys out of source control and never paste them into chat.
+
+The demo is deliberately unavailable when `DJANGO_DEBUG=False`; Django refuses
+to start if `DJANGO_AI_ONBOARDING_DEMO_ENABLED=True` in that mode. NASA POWER
+climatology is historical point data, not a hazard map, current weather,
+forecast, or proof of local exposure. The **Quick risk check** feature above
+is the production path that analyzes actual business profiles. See the
+[Gemini API terms](https://ai.google.dev/gemini-api/terms)
+and [NASA POWER API documentation](https://power.larc.nasa.gov/docs/services/api/temporal/).
 
 ## Plans, onboarding, and M-Pesa billing
 

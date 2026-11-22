@@ -650,6 +650,8 @@ class Risk(models.Model):
     residual_likelihood = models.PositiveSmallIntegerField(default=2)
     residual_impact = models.PositiveSmallIntegerField(default=2)
     appetite = models.ForeignKey(RiskAppetite, on_delete=models.SET_NULL, null=True, blank=True)
+    ai_generated = models.BooleanField(default=False)
+    ai_generated_at = models.DateTimeField(null=True, blank=True)
     early_warning_indicator = models.CharField(max_length=255, blank=True)
     early_warning_threshold = models.CharField(max_length=255, blank=True)
     review_date = models.DateField(null=True, blank=True)
