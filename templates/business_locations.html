@@ -36,7 +36,7 @@
   <section class="location-map-card" aria-labelledby="location-map-title">
     <div class="location-section-heading">
       <div><span class="eyebrow">Site map</span><h2 id="location-map-title">Your business locations</h2></div>
-      <div class="location-map-actions"><span>{{ locations|length }} site{{ locations|length|pluralize }}</span><button type="button" data-map-fit-sites>Show all sites</button><button type="button" data-map-focus-kenya>Focus on Kenya</button></div>
+      <div class="location-map-actions"><span>{{ locations|length }} site{{ locations|length|pluralize }}</span><button type="button" data-map-fit-sites>Show all sites</button><button type="button" data-map-focus-kenya>Focus on Kenya</button>{% if can_edit %}<button type="button" data-use-my-location>Use my location</button>{% endif %}</div>
     </div>
     <div id="business-sites-map" role="region" aria-label="Map of business locations"></div>
     <p class="location-map-help">{% if can_edit %}Click the map to place or move the pin for the site form. Drag a marker to fine-tune its position.{% else %}Pins show the saved business sites in this workspace.{% endif %}</p>

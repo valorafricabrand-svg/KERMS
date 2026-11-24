@@ -18,9 +18,10 @@ document.addEventListener("DOMContentLoaded", () => {
     );
   const map = L.map(mapElement).setView([-1.286389, 36.817223], 6);
 
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
     maxZoom: 19,
-    attribution: "&copy; OpenStreetMap contributors",
+    subdomains: "abcd",
+    attribution: '&copy; OpenStreetMap contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
   }).addTo(map);
 
   const savedMarkers = new Map();
@@ -85,6 +86,31 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   map.on("click", event => setSelectedPoint(event.latlng.lat, event.latlng.lng));
+
+  document.querySelector("[data-use-my-location]")?.addEventListener("click", event => {
+    const button = event.currentTarget;
+    if (!navigator.geolocation) {
+      alert("Your browser does not support geolocation.");
+      return;
+    }
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "Locating…";
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setSelectedPoint(position.coords.latitude, position.coords.longitude, true);
+        map.setZoom(15);
+        button.disabled = false;
+        button.textContent = originalText;
+      },
+      () => {
+        alert("Could not get your location. You can still click the map to place the pin.");
+        button.disabled = false;
+        button.textContent = originalText;
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  });
 
   const initialLatitude = Number(latitudeInput.value);
   const initialLongitude = Number(longitudeInput.value);
