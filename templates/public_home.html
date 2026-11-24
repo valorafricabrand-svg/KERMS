@@ -37,11 +37,13 @@
     <section class="site-hero">
       <div class="site-hero-copy">
         <div class="site-overline"><span></span> Practical risk management for Kenyan businesses</div>
-        <h1>Know what could interrupt your business.<em> Plan what to do next.</em></h1>
-        <p class="site-hero-lede">A clear, practical way for entrepreneurs to understand their business, explore real-world risks, and turn priorities into manageable actions.</p>
+        <h1>See what could interrupt your business.<em> In under a minute.</em></h1>
+        <p class="site-hero-lede">Tell us a little about your business and get instant, AI-suggested risks and practical actions — then build a more complete picture over time.</p>
         <div class="site-hero-actions">
           {% if request.user.is_authenticated %}
           <a class="site-button site-button-primary" href="{% url 'dashboard' %}">Open your workspace <span aria-hidden="true">→</span></a>
+          {% elif public_signup_enabled %}
+          <a class="site-button site-button-primary" href="{% url 'signup' %}">Get your free risk check <span aria-hidden="true">→</span></a>
           {% endif %}
           <a class="site-button site-button-secondary" href="#how-it-works">See how it works</a>
         </div>
@@ -54,10 +56,10 @@
         <div class="site-art-title">A clearer way to manage risk</div>
         <div class="site-art-subtitle">A practical journey shaped around your business.</div>
         <div class="site-art-steps">
-          <div class="site-art-step is-done"><span>✓</span><div><strong>Understand your business</strong><small>Business model and everyday operations</small></div><b>01</b></div>
-          <div class="site-art-step is-current"><span>⌖</span><div><strong>Map where you operate</strong><small>Sites, location context, and dependencies</small></div><b>02</b></div>
-          <div class="site-art-step"><span>↗</span><div><strong>Assess what matters</strong><small>Structured check-ins and risk discussions</small></div><b>03</b></div>
-          <div class="site-art-step"><span>✓</span><div><strong>Agree practical actions</strong><small>Owners, next steps, and review dates</small></div><b>04</b></div>
+          <div class="site-art-step is-done"><span>⚡</span><div><strong>Get an instant risk check</strong><small>AI-suggested risks in under a minute</small></div><b>01</b></div>
+          <div class="site-art-step is-current"><span>⌂</span><div><strong>Understand your business</strong><small>Business model and everyday operations</small></div><b>02</b></div>
+          <div class="site-art-step"><span>⌖</span><div><strong>Map where you operate</strong><small>Sites, location context, and dependencies</small></div><b>03</b></div>
+          <div class="site-art-step"><span>↗</span><div><strong>Agree practical actions</strong><small>Owners, next steps, and review dates</small></div><b>04</b></div>
         </div>
         <div class="site-art-foot"><span>YOUR JOURNEY</span><span>Clear steps. Your decisions.</span></div>
       </div>
@@ -80,22 +82,27 @@
         <div class="site-workflow-viewport">
         <div class="site-workflow-grid">
         <article class="site-workflow-card">
-          <span class="site-card-number">01 / BUSINESS</span><span class="site-card-icon">⌂</span>
-          <h3>Describe your business</h3>
-          <p>Capture your sector, customers, team, suppliers, sales channels, and the way your business operates.</p>
+          <span class="site-card-number">01 / INSTANT</span><span class="site-card-icon">⚡</span>
+          <h3>Get an instant risk check</h3>
+          <p>Enter your business name, type, and location, and get AI-suggested risks with practical actions in under a minute.</p>
         </article>
         <article class="site-workflow-card">
-          <span class="site-card-number">02 / PLACES</span><span class="site-card-icon">⌖</span>
+          <span class="site-card-number">02 / BUSINESS</span><span class="site-card-icon">⌂</span>
+          <h3>Describe your business</h3>
+          <p>Add your sector, customers, revenue model, suppliers, and sales channels for sharper, business-model-aware suggestions.</p>
+        </article>
+        <article class="site-workflow-card">
+          <span class="site-card-number">03 / PLACES</span><span class="site-card-icon">⌖</span>
           <h3>Map your operating sites</h3>
           <p>Keep shops, farms, market stalls, workshops, and other operating locations in one business view.</p>
         </article>
         <article class="site-workflow-card">
-          <span class="site-card-number">03 / ASSESS</span><span class="site-card-icon">◎</span>
+          <span class="site-card-number">04 / ASSESS</span><span class="site-card-icon">◎</span>
           <h3>Talk through real risks</h3>
           <p>Use repeatable check-ins and guided prompts to identify what could affect customers, cash flow, or operations.</p>
         </article>
         <article class="site-workflow-card">
-          <span class="site-card-number">04 / ACT</span><span class="site-card-icon">↗</span>
+          <span class="site-card-number">05 / ACT</span><span class="site-card-icon">↗</span>
           <h3>Turn priorities into action</h3>
           <p>Record risks, agree practical treatments, assign owners, and review progress as circumstances change.</p>
         </article>

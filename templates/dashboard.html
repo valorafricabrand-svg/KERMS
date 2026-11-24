@@ -3,7 +3,8 @@
 {% block heading %}Business risk overview{% endblock %}
 {% block actions %}
 <a class="button secondary" href="/incidents/">Report an issue</a>
-{% if can_edit %}<a class="button" href="/risks/new/?organization={{ organization.pk }}">+ Add a risk</a>{% endif %}
+{% if can_edit %}<a class="button secondary" href="/risks/new/?organization={{ organization.pk }}">+ Add a risk</a>{% endif %}
+{% if can_edit and organization %}<a class="button" href="/quick-risk-check/?organization={{ organization.pk }}">Run a quick risk check</a>{% endif %}
 {% endblock %}
 {% block content %}
 <div class="owner-dashboard">
@@ -12,8 +13,9 @@
     <div>
       <p class="owner-kicker">A practical plan for your business</p>
       <h2>{{ organization.name }}</h2>
-      <p>Understand your business, map where it operates, and turn real concerns into practical actions.</p>
-      <a class="owner-profile-link" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Business profile {{ business_profile_completion }}% complete{% else %}Add your business profile{% endif %} <span aria-hidden="true">→</span></a>
+      <p>See the risks most likely to affect your business in under a minute, then turn real concerns into practical actions.</p>
+      {% if can_edit %}<a class="button" href="/quick-risk-check/?organization={{ organization.pk }}">Get your instant risk check <span aria-hidden="true">→</span></a>{% endif %}
+      <a class="owner-profile-link" href="/business-profile/?organization={{ organization.pk }}">{% if business_profile %}Business profile {{ business_profile_completion }}% complete{% else %}Add your business profile for sharper results{% endif %} <span aria-hidden="true">→</span></a>
     </div>
     <form class="owner-org-filter" method="get">
       <label for="dashboard-organization">Business</label>

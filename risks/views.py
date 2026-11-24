@@ -1525,13 +1525,27 @@ def dashboard(request):
         location_count and mapped_location_count == location_count
     )
     action_plan_started = bool(open_risk_count and action_plan_count)
+    ai_risk_check_done = bool(
+        organization
+        and Risk.objects.filter(organization=organization, ai_generated=True).exists()
+    )
     journey_steps = [
+        {
+            "title": "Try a quick risk check",
+            "description": (
+                "AI-suggested risks are in your register — review and adjust them."
+                if ai_risk_check_done
+                else "Get instant, tailored risk suggestions in under a minute."
+            ),
+            "complete": ai_risk_check_done,
+            "url": f"/quick-risk-check/?organization={organization.pk}",
+        },
         {
             "title": "Describe your business",
             "description": (
                 f"{business_profile_record.profile_completion}% of core profile details added"
                 if business_profile_record
-                else "Add your sector, customers, and how the business operates."
+                else "Add your sector, customers, and how the business operates — this sharpens future AI suggestions."
             ),
             "complete": business_model_complete,
             "url": f"/business-profile/?organization={organization.pk}",

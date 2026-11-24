@@ -1053,11 +1053,11 @@ class RiskPlatformTests(TestCase):
         self.assertContains(response, "Business risk overview")
         self.assertContains(response, "Your risk management journey")
         self.assertContains(response, "not a safety rating")
-        self.assertEqual(response.context["journey_step_count"], 4)
+        self.assertEqual(response.context["journey_step_count"], 5)
         self.assertEqual(response.context["completed_journey_steps"], 0)
         self.assertEqual(response.context["journey_progress"], 0)
         self.assertEqual(
-            response.context["next_journey_step"]["title"], "Describe your business"
+            response.context["next_journey_step"]["title"], "Try a quick risk check"
         )
 
     def test_dashboard_journey_uses_read_only_links_for_viewers(self):
@@ -1071,10 +1071,10 @@ class RiskPlatformTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["can_edit"])
         self.assertEqual(
-            response.context["journey_steps"][2]["url"],
+            response.context["journey_steps"][3]["url"],
             f"/assessments/?organization={self.organization.pk}",
         )
-        self.assertEqual(response.context["journey_steps"][3]["url"], "/risks/")
+        self.assertEqual(response.context["journey_steps"][4]["url"], "/risks/")
 
     def test_dashboard_explains_when_user_has_no_business_workspace(self):
         OrganizationMembership.objects.filter(
@@ -1126,6 +1126,14 @@ class RiskPlatformTests(TestCase):
             risk=risk,
             action="Identify an alternative supplier",
         )
+        Risk.objects.create(
+            organization=self.organization,
+            reference="JOURNEY-AI-1",
+            title="AI-suggested risk",
+            description="Suggested by the quick risk check.",
+            risk_type=Risk.RiskType.OPERATIONAL,
+            ai_generated=True,
+        )
         other_organization = Organization.objects.create(
             name="Other journey business", code="JOURNEYOTHER"
         )
@@ -1144,9 +1152,9 @@ class RiskPlatformTests(TestCase):
         self.assertEqual(response.context["action_plan_count"], 1)
         self.assertEqual(
             [step["complete"] for step in response.context["journey_steps"]],
-            [True, False, True, True],
+            [True, True, False, True, True],
         )
-        self.assertEqual(response.context["journey_progress"], 75)
+        self.assertEqual(response.context["journey_progress"], 80)
         self.assertEqual(
             response.context["next_journey_step"]["title"], "Map your operating sites"
         )
