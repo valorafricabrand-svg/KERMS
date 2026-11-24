@@ -1,8 +1,8 @@
 .owner-dashboard {
-  --owner-ink: #203643;
-  --owner-muted: #64737b;
-  --owner-line: #e7eceb;
-  --owner-teal: #167c72;
+  --owner-ink: #1A1916;
+  --owner-muted: #6B675E;
+  --owner-line: #E6E0D2;
+  --owner-teal: #0F4C3A;
   color: var(--owner-ink);
 }
 
@@ -11,30 +11,45 @@
   justify-content: space-between;
   align-items: flex-end;
   gap: 20px;
-  padding: 18px 22px;
+  padding: 32px 34px;
   margin-bottom: 18px;
-  border: 1px solid #dfeae5;
-  border-radius: 12px;
-  background: linear-gradient(110deg, #f1f8f4, #f6f9fa 78%);
+  border: 1px solid #22423A;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #0F2A23, #143630 85%);
+  color: #F6F3EC;
 }
 
 .owner-welcome h2 {
   margin: 3px 0 5px;
-  font-size: 24px;
+  font-size: 28px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  color: #F6F3EC;
 }
 
 .owner-welcome p {
   margin: 0;
-  color: var(--owner-muted);
+  color: #C9C3B4;
   font-size: 16px;
 }
 
 .owner-welcome .owner-kicker {
-  color: var(--owner-teal);
+  color: #E2C68F;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: .08em;
   text-transform: uppercase;
+}
+
+.owner-welcome .button {
+  margin-top: 14px;
+  background: #C9A86A;
+  color: #14110B;
+}
+
+.owner-welcome .button:hover { background: #E2C68F; }
+
+.owner-welcome .owner-profile-link {
+  color: #E2C68F;
 }
 
 .owner-org-filter {
@@ -44,7 +59,7 @@
 }
 
 .owner-org-filter label {
-  color: var(--owner-muted);
+  color: #C9C3B4;
   font-size: 13px;
   font-weight: 700;
 }
@@ -74,7 +89,7 @@
   min-height: 112px;
   padding: 16px;
   border: 1px solid var(--owner-line);
-  border-radius: 11px;
+  border-radius: 16px;
   background: #fff;
   color: var(--owner-ink);
   transition: border-color .15s, transform .15s, box-shadow .15s;
@@ -82,8 +97,8 @@
 
 .owner-metric:hover {
   transform: translateY(-2px);
-  border-color: #b7d6cf;
-  box-shadow: 0 7px 20px rgba(32, 54, 67, .06);
+  border-color: #C9A86A;
+  box-shadow: 0 7px 20px rgba(12, 23, 20, .06);
 }
 
 .owner-metric-icon {
@@ -311,11 +326,11 @@
 }
 
 .owner-journey {
-  padding: 20px;
+  padding: 24px;
   margin-bottom: 20px;
-  border: 1px solid #dce8e4;
-  border-radius: 12px;
-  background: linear-gradient(125deg, #f7fbf8, #fff 75%);
+  border: 1px solid var(--owner-line);
+  border-radius: 18px;
+  background: linear-gradient(125deg, #FBF9F4, #fff 75%);
 }
 
 .owner-journey-heading {
@@ -364,7 +379,7 @@
 
 .owner-journey-steps {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
   gap: 10px;
   padding: 0;
   margin: 18px 0 0;
@@ -374,13 +389,13 @@
 .owner-journey-step {
   min-width: 0;
   border: 1px solid var(--owner-line);
-  border-radius: 9px;
+  border-radius: 14px;
   background: #fff;
 }
 
-.owner-journey-step.is-next { border-color: #9ac9bc; box-shadow: 0 0 0 2px #eaf5f1; }
-.owner-journey-step.is-complete .owner-step-number { background: #e5f2eb; color: #28714e; }
-.owner-journey-step.is-next .owner-step-number { background: #e5f2ef; color: #176f65; }
+.owner-journey-step.is-next { border-color: #C9A86A; box-shadow: 0 0 0 2px rgb(201 168 106 / 16%); }
+.owner-journey-step.is-complete .owner-step-number { background: #E3EFE8; color: #0F4C3A; }
+.owner-journey-step.is-next .owner-step-number { background: #F3ECDD; color: #7A5C2B; }
 
 .owner-journey-step a {
   display: grid;
@@ -392,8 +407,8 @@
   text-decoration: none;
 }
 
-.owner-journey-step a:hover { background: #f8fbf9; }
-.owner-journey-step a:focus-visible { outline: 3px solid #62a99a; outline-offset: 2px; }
+.owner-journey-step a:hover { background: #FBF9F4; }
+.owner-journey-step a:focus-visible { outline: 3px solid #C9A86A; outline-offset: 2px; }
 
 .owner-step-number {
   display: grid;
@@ -411,8 +426,8 @@
 .owner-step-copy strong { font-size: 14px; line-height: 1.4; }
 .owner-step-copy small { color: var(--owner-muted); font-size: 12px; line-height: 1.45; }
 .owner-step-status { grid-column: 2; color: var(--owner-muted); font-size: 12px; font-weight: 700; }
-.owner-journey-step.is-next .owner-step-status { color: var(--owner-teal); }
-.owner-journey-step.is-complete .owner-step-status { color: #28714e; }
+.owner-journey-step.is-next .owner-step-status { color: #7A5C2B; }
+.owner-journey-step.is-complete .owner-step-status { color: #0F4C3A; }
 
 .owner-journey-next {
   display: flex;

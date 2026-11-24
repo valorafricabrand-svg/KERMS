@@ -4,11 +4,12 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{% block title %}KERMS | Kenya Enterprise Risk Management System{% endblock %}</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <link rel="stylesheet" href="{% static 'css/entrepreneur-workflow.css' %}">
   <link rel="stylesheet" href="{% static 'css/kerms-brand.css' %}?v=3">
+  <link rel="stylesheet" href="{% static 'css/kerms-luxury.css' %}?v=1">
   {% if request.path == "/billing/" %}<link rel="stylesheet" href="{% static 'css/billing.css' %}">{% endif %}
   {% if request.path == "/dashboard/" %}<link rel="stylesheet" href="{% static 'css/owner-dashboard.css' %}?v=7">{% endif %}
   {% if request.path == "/business-profile/" %}<link rel="stylesheet" href="{% static 'css/business-profile.css' %}?v=2">{% endif %}
@@ -44,8 +45,8 @@
         </div>
       </details>
     </nav>
-    <a href="{% url 'quick_risk_check' %}" class="sidebar-action {% if '/quick-risk-check/' in request.path %}active{% endif %}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.2-8 10-4.6-1.8-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg><span>Quick risk check</span></a>
-    <a href="/risks/new/" class="sidebar-action"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Register new risk</span></a>
+    <a href="{% url 'quick_risk_check' %}" class="sidebar-action sidebar-action-primary {% if '/quick-risk-check/' in request.path %}active{% endif %}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.2-8 10-4.6-1.8-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.3 2.3 4.8-5"/></svg><span>Quick risk check</span></a>
+    <a href="/risks/new/" class="sidebar-action sidebar-action-secondary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Register new risk</span></a>
     <div class="user-panel"><span class="avatar">{{ request.user.username|first|upper }}</span><div><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><span>{{ request.user.email }}</span></div><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit" title="Sign out" aria-label="Sign out">↪</button></form></div>
   </aside>
   <main class="main">

@@ -1,0 +1,139 @@
+/* KERMS luxury reskin — warm parchment + deep green + gold, layered over app.css and kerms-brand.css */
+
+:root {
+  --bg: #F6F3EC;
+  --ink: #1A1916;
+  --muted: #6B675E;
+  --line: #E6E0D2;
+  --blue: #0F4C3A;
+  --deep: #0C1714;
+  --deep-2: #143630;
+  --gold: #C9A86A;
+  --gold-light: #E2C68F;
+  --font-serif: "Cormorant Garamond", Georgia, serif;
+}
+
+h1, h2, .topbar h1, .card h2, .card-head h2 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.topbar h1 { font-size: 30px; color: var(--deep); }
+
+.card {
+  border-radius: 18px;
+  border-color: var(--line);
+  box-shadow: 0 1px 2px rgba(12, 23, 20, .04);
+}
+
+.button {
+  border-radius: 10px;
+}
+
+.button.secondary {
+  border-color: var(--line);
+}
+
+.global-search {
+  border-radius: 10px;
+}
+
+/* Sidebar */
+.sidebar {
+  background: var(--deep);
+  border-right: 1px solid #1B2A25;
+}
+
+.brand .brand-mark {
+  background: var(--gold);
+  color: #14110B;
+}
+
+.brand strong { color: #F6F3EC; }
+.brand small { color: #A9A396; }
+
+.sidebar nav > a,
+.sidebar .nav-more > summary,
+.sidebar .nav-more-items > a {
+  color: #C9C3B4;
+}
+
+.sidebar nav > a:hover,
+.sidebar .nav-more > summary:hover,
+.sidebar .nav-more-items > a:hover {
+  border-color: rgb(201 168 106 / 22%);
+  background: rgb(201 168 106 / 10%);
+  color: #F6F3EC;
+}
+
+.sidebar nav > a.active,
+.sidebar .nav-more-items > a.active {
+  border-color: rgb(201 168 106 / 30%);
+  background: linear-gradient(105deg, rgb(201 168 106 / 16%), rgb(201 168 106 / 7%));
+  color: #F6F3EC;
+  box-shadow: inset 3px 0 var(--gold);
+}
+
+.sidebar .nav-icon {
+  border-color: rgb(201 168 106 / 18%);
+  color: #B9B19C;
+  background: rgb(255 255 255 / 3%);
+}
+
+.sidebar nav > a:hover .nav-icon,
+.sidebar .nav-more > summary:hover .nav-icon,
+.sidebar .nav-more-items > a:hover .nav-icon {
+  border-color: rgb(201 168 106 / 40%);
+  color: var(--gold-light);
+  background: rgb(201 168 106 / 14%);
+}
+
+.sidebar nav > a.active .nav-icon,
+.sidebar .nav-more-items > a.active .nav-icon {
+  border-color: rgb(201 168 106 / 40%);
+  color: var(--gold-light);
+  background: rgb(201 168 106 / 18%);
+}
+
+.sidebar .nav-chevron { color: #8F897C; }
+.sidebar .nav-more[open] > summary .nav-chevron { color: var(--gold-light); }
+.sidebar .nav-more-items { border-left-color: rgb(201 168 106 / 16%); }
+
+.sidebar .sidebar-action {
+  border-color: #3A4541;
+  background: transparent;
+  color: #F6F3EC;
+}
+
+.sidebar .sidebar-action:hover {
+  border-color: var(--gold);
+  background: rgb(201 168 106 / 10%);
+}
+
+.sidebar .sidebar-action-primary {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #14110B;
+  font-weight: 700;
+}
+
+.sidebar .sidebar-action-primary:hover {
+  background: var(--gold-light);
+  border-color: var(--gold-light);
+  color: #14110B;
+}
+
+.sidebar .nav-more > summary:focus-visible,
+.sidebar nav > a:focus-visible,
+.sidebar .nav-more-items > a:focus-visible,
+.sidebar .sidebar-action:focus-visible {
+  outline-color: var(--gold-light);
+}
+
+.user-panel { border-top: 1px solid #23302C; }
+.user-panel strong { color: #F6F3EC; }
+.user-panel span { color: #A9A396; }
+.user-panel .avatar { background: #1E3A31; color: var(--gold-light); }
+.user-panel button { color: #A9A396; }
+.user-panel button:hover { background: rgb(201 168 106 / 14%); color: var(--gold-light); }
