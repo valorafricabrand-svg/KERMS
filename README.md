@@ -231,16 +231,19 @@ and [NASA POWER API documentation](https://power.larc.nasa.gov/docs/services/api
 
 ## Plans, onboarding, and M-Pesa billing
 
-New organization workspaces start on Starter in read-only mode. Members can
-review the workspace and its billing page; an administrator or risk manager
-must pay the one-time KES 500 onboarding fee with an M-Pesa STK prompt before
-workspace changes are enabled. Starter includes 3 seats, 1 business location,
-and 5 active risks. Premium is KES 500 monthly or KES 5,000 annually, with 5
-seats, 5 locations, and unlimited active risks. Premium plan features and
-quotas, the onboarding fee, and the default renewal grace period are editable
-in Django admin. Premium renewals require a new customer-approved M-Pesa prompt
-each term; they are not automatic recurring debits. After a Premium term and
-its 7-day grace period, the workspace becomes read-only.
+New organization workspaces start on Starter with full read-write access for a
+free 30-day trial (`OrganizationSubscription.TRIAL_DAYS`), counted from when
+the subscription record is created. During the trial, no onboarding payment is
+required. Once the trial ends, an administrator or risk manager must pay the
+one-time KES 500 onboarding fee with an M-Pesa STK prompt before workspace
+changes are enabled again; the workspace and its billing page remain readable
+throughout. Starter includes 3 seats, 1 business location, and 5 active risks.
+Premium is KES 500 monthly or KES 5,000 annually, with 5 seats, 5 locations,
+and unlimited active risks. Premium plan features and quotas, the onboarding
+fee, and the default renewal grace period are editable in Django admin.
+Premium renewals require a new customer-approved M-Pesa prompt each term; they
+are not automatic recurring debits. After a Premium term and its 7-day grace
+period, the workspace becomes read-only.
 
 Existing organizations present when migration `0017` is applied are
 grandfathered on Premium with the onboarding fee waived, preserving their

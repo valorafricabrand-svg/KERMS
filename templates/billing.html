@@ -9,8 +9,10 @@
       <div>
         <p class="billing-kicker">KERMS for {{ organization.name }}</p>
         <h2>Risk management that grows with your business.</h2>
-        {% if not subscription.onboarding_paid %}
-          <p>Your workspace is read-only until the one-time onboarding fee is paid. Your existing information remains available.</p>
+        {% if subscription.in_trial_period %}
+          <p>You're on a free {{ subscription.TRIAL_DAYS }}-day trial with full access — {{ subscription.trial_days_remaining }} day{{ subscription.trial_days_remaining|pluralize }} left, until {{ subscription.trial_ends_at|date:"j M Y" }}. Pay the onboarding fee any time to keep access after your trial ends.</p>
+        {% elif not subscription.onboarding_paid %}
+          <p>Your free trial has ended. Your workspace is read-only until the one-time onboarding fee is paid. Your existing information remains available.</p>
         {% elif not subscription.allows_writes %}
           <p>Your workspace is currently read-only. Renew your subscription to restore editing.</p>
         {% else %}
@@ -20,7 +22,7 @@
       <div class="billing-current">
         <span>Current plan</span>
         <strong>{{ subscription.plan.name }}</strong>
-        <span class="billing-status">{{ subscription.effective_status_label }}</span>
+        <span class="billing-status">{% if subscription.in_trial_period %}Free trial · {{ subscription.trial_days_remaining }} day{{ subscription.trial_days_remaining|pluralize }} left{% else %}{{ subscription.effective_status_label }}{% endif %}</span>
       </div>
     </header>
 

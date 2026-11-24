@@ -185,6 +185,8 @@ class OrganizationSubscription(models.Model):
         MONTHLY = "monthly", "Monthly"
         ANNUAL = "annual", "Annual"
 
+    TRIAL_DAYS = 30
+
     organization = models.OneToOneField(
         Organization, on_delete=models.CASCADE, related_name="subscription"
     )
@@ -221,6 +223,24 @@ class OrganizationSubscription(models.Model):
         return bool(self.onboarding_fee_paid_at or self.onboarding_fee_waived_at)
 
     @property
+    def trial_ends_at(self):
+        return self.created_at + timedelta(days=self.TRIAL_DAYS)
+
+    @property
+    def in_trial_period(self):
+        return (
+            self.status == self.Status.ONBOARDING_DUE
+            and not self.onboarding_paid
+            and timezone.now() < self.trial_ends_at
+        )
+
+    @property
+    def trial_days_remaining(self):
+        if not self.in_trial_period:
+            return 0
+        return max((self.trial_ends_at - timezone.now()).days, 0)
+
+    @property
     def effective_status_label(self):
         if self.status == self.Status.ACTIVE and self.current_period_end:
             now = timezone.now()
@@ -232,10 +252,9 @@ class OrganizationSubscription(models.Model):
 
     def allows_writes(self, at=None):
         at = at or timezone.now()
-        if not self.onboarding_paid or self.status in {
-            self.Status.ONBOARDING_DUE,
-            self.Status.SUSPENDED,
-        }:
+        if self.status == self.Status.ONBOARDING_DUE and not self.onboarding_paid:
+            return at < self.trial_ends_at
+        if not self.onboarding_paid or self.status == self.Status.SUSPENDED:
             return False
         if self.status in {self.Status.PAST_DUE, self.Status.CANCELLED}:
             return bool(

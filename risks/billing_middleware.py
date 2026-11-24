@@ -118,7 +118,8 @@ class BillingAccessMiddleware:
 
         if subscription.status == subscription.Status.ONBOARDING_DUE:
             message = (
-                "This workspace is read-only until its KES 500 onboarding payment is confirmed."
+                "Your free trial has ended. This workspace is read-only until its "
+                "onboarding payment is confirmed."
             )
         else:
             message = (

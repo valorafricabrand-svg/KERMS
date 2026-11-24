@@ -79,7 +79,27 @@ class RiskPlatformTests(TestCase):
         self.assertContains(response, "KES 5000")
         self.assertContains(response, "no automatic M-Pesa deductions")
 
-    def test_unpaid_workspace_is_read_only_but_remains_visible(self):
+    def test_unpaid_workspace_allows_writes_during_free_trial(self):
+        organization = Organization.objects.create(
+            name="Trial Workspace", code="TRIAL"
+        )
+        OrganizationMembership.objects.create(
+            user=self.user, organization=organization, role="risk_manager"
+        )
+        self.client.force_login(self.user)
+        url = f"{reverse('business_profile')}?organization={organization.pk}"
+
+        write_response = self.client.post(
+            url,
+            {"organization": organization.pk, "sector": "retail"},
+        )
+
+        self.assertRedirects(write_response, url)
+        self.assertTrue(BusinessProfile.objects.filter(organization=organization).exists())
+        self.assertFalse(organization.subscription.onboarding_paid)
+        self.assertTrue(organization.subscription.in_trial_period)
+
+    def test_unpaid_workspace_is_read_only_after_trial_expires(self):
         organization = Organization.objects.create(
             name="Unpaid Workspace", code="UNPAID"
         )
@@ -90,6 +110,9 @@ class RiskPlatformTests(TestCase):
         url = f"{reverse('business_profile')}?organization={organization.pk}"
 
         read_response = self.client.get(url)
+        OrganizationSubscription.objects.filter(organization=organization).update(
+            created_at=timezone.now() - timedelta(days=31)
+        )
         write_response = self.client.post(
             url,
             {"organization": organization.pk, "sector": "retail"},
