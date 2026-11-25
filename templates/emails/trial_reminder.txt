@@ -1,0 +1,13 @@
+{% load tz %}Hello,
+
+{% if stage == "expired" %}The free trial for {{ organization.name }} on KERMS ended on {{ trial_ends_at|timezone:"Africa/Nairobi"|date:"j M Y" }}. Your workspace is now read-only: you can still view everything you've recorded, but you can't add or change anything until the one-time onboarding fee is paid.
+{% elif stage == "1d" %}The free trial for {{ organization.name }} on KERMS ends tomorrow ({{ trial_ends_at|timezone:"Africa/Nairobi"|date:"j M Y, H:i" }}). After that, your workspace becomes read-only until the one-time onboarding fee is paid.
+{% else %}The free trial for {{ organization.name }} on KERMS ends in {{ days_left }} days, on {{ trial_ends_at|timezone:"Africa/Nairobi"|date:"j M Y" }}. After that, your workspace becomes read-only until the one-time onboarding fee is paid.
+{% endif %}
+{% if stage == "expired" %}Restore full access{% else %}Keep full access{% endif %} by paying the one-time onboarding fee of KES {{ onboarding_fee|floatformat:0 }} with M-Pesa:
+
+{{ billing_url }}
+
+Your business profile, sites, assessments and risks are kept safe either way.
+
+KERMS

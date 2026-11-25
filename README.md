@@ -126,6 +126,14 @@ Passwords must be at least 12 characters and are checked against Django's
 configured validators. Terms acceptance is required and its version and
 timestamp are recorded with the account.
 
+### Password reset
+
+The sign-in page links to `/password-reset/`, which emails a single-use link
+(valid for three days) to active accounts with a password. It shows the same
+confirmation whether or not the address exists, and shares the same
+five-per-hour limit. In production, links use `DJANGO_PUBLIC_BASE_URL`.
+Accounts created only through Google have no password and sign in with Google.
+
 ### Admin-only account provisioning
 
 Email is not needed when administrators create accounts directly. Keep
@@ -277,6 +285,21 @@ fee, and the default renewal grace period are editable in Django admin.
 Premium renewals require a new customer-approved M-Pesa prompt each term; they
 are not automatic recurring debits. After a Premium term and its 7-day grace
 period, the workspace becomes read-only.
+
+### Trial reminder emails
+
+`python manage.py send_trial_reminders` emails each unpaid workspace's
+administrators and risk managers when 7 days are left, when 1 day is left, and
+when the trial has ended. Each stage is sent once (tracked in
+`OrganizationSubscription.last_trial_reminder`). If runs are missed, only the
+latest due reminder is sent, and trials that ended more than 3 days ago are
+skipped. Use `--dry-run` to preview recipients without sending.
+
+Run it once a day. On Render, create a **Cron Job** from this repository
+(Docker runtime) with schedule `0 6 * * *` (09:00 Nairobi) and command
+`python manage.py send_trial_reminders`, and give it the same database and
+email environment variables as the web service (an Environment Group shared
+by both is easiest).
 
 Existing organizations present when migration `0017` is applied are
 grandfathered on Premium with the onboarding fee waived, preserving their

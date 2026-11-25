@@ -212,6 +212,7 @@ class OrganizationSubscription(models.Model):
         related_name="waived_kerms_onboarding_fees",
     )
     onboarding_fee_waived_reason = models.CharField(max_length=255, blank=True)
+    last_trial_reminder = models.CharField(max_length=10, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

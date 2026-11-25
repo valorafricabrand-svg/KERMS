@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=2">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=3">
 </head>
 <body class="auth-page">
   <a class="site-skip-link" href="#sign-in-form">Skip to sign in</a>
@@ -36,6 +36,7 @@
         {{ form.username }}
         <label for="{{ form.password.id_for_label }}">Password</label>
         {{ form.password }}
+        <a class="auth-forgot-link" href="{% url 'password_reset' %}">Forgot your password?</a>
         <button class="auth-submit" type="submit">Sign in securely <span aria-hidden="true">→</span></button>
       </form>
       {% if google_sign_in_enabled %}

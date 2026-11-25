@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
+from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.tokens import default_token_generator
 from django.conf import settings
@@ -27,6 +28,7 @@ import re
 import smtplib
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 from .bot_services import evaluate_bot_transaction
@@ -1222,6 +1224,25 @@ def _send_verification_email(request, user):
         [user.email],
         fail_silently=False,
     )
+
+
+class RateLimitedPasswordResetView(auth_views.PasswordResetView):
+    template_name = "registration/password_reset_form.html"
+    email_template_name = "registration/password_reset_email.txt"
+    subject_template_name = "registration/password_reset_subject.txt"
+
+    def form_valid(self, form):
+        if not _signup_request_allowed(self.request, form.cleaned_data["email"]):
+            return self.render_to_response(
+                self.get_context_data(form=form, rate_limited=True), status=429
+            )
+        if not settings.DEBUG and settings.PUBLIC_BASE_URL:
+            public_url = urlsplit(settings.PUBLIC_BASE_URL)
+            self.extra_email_context = {
+                "protocol": public_url.scheme,
+                "domain": public_url.netloc,
+            }
+        return super().form_valid(form)
 
 
 def signup(request):

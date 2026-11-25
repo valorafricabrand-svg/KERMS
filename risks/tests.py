@@ -1,6 +1,8 @@
 import hashlib
 import json
+import re
 from datetime import timedelta
+from io import StringIO
 from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
 from smtplib import SMTPException
@@ -11,6 +13,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.contrib.messages.middleware import MessageMiddleware
 from django.contrib.sessions.middleware import SessionMiddleware
 from django.core import mail
+from django.core.management import call_command
 from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
@@ -2443,3 +2446,173 @@ class AIRiskAnalysisServiceTests(SimpleTestCase):
 
         with self.assertRaisesRegex(AIRiskAnalysisError, "risk type"):
             generate_business_risk_analysis({})
+
+
+class PasswordResetTests(TestCase):
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(
+            "owner", "owner@example.com", "old-password-123"
+        )
+
+    def reset_link_path(self):
+        self.assertEqual(len(mail.outbox), 1)
+        match = re.search(r"https?://[^/\s]+(/password-reset/[^/\s]+/[^/\s]+/)", mail.outbox[0].body)
+        self.assertIsNotNone(match)
+        return match.group(1)
+
+    def test_login_page_links_to_password_reset(self):
+        response = self.client.get(reverse("login"))
+
+        self.assertContains(response, reverse("password_reset"))
+
+    def test_user_can_reset_password_from_emailed_link(self):
+        response = self.client.post(reverse("password_reset"), {"email": "OWNER@example.com"})
+
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(mail.outbox[0].subject, "Reset your KERMS password")
+        link_response = self.client.get(self.reset_link_path(), follow=True)
+        self.assertTrue(link_response.context["validlink"])
+        set_password_url = link_response.redirect_chain[-1][0]
+
+        response = self.client.post(
+            set_password_url,
+            {"new_password1": "brand-new-passphrase-42", "new_password2": "brand-new-passphrase-42"},
+        )
+
+        self.assertRedirects(response, reverse("password_reset_complete"))
+        self.assertTrue(
+            self.client.login(username="owner", password="brand-new-passphrase-42")
+        )
+
+    def test_reset_link_cannot_be_reused(self):
+        self.client.post(reverse("password_reset"), {"email": "owner@example.com"})
+        link = self.reset_link_path()
+        set_password_url = self.client.get(link, follow=True).redirect_chain[-1][0]
+        self.client.post(
+            set_password_url,
+            {"new_password1": "brand-new-passphrase-42", "new_password2": "brand-new-passphrase-42"},
+        )
+
+        response = self.client.get(link, follow=True)
+
+        self.assertFalse(response.context["validlink"])
+        self.assertContains(response, "This link has expired")
+
+    def test_unknown_email_gets_same_response_and_no_email(self):
+        response = self.client.post(reverse("password_reset"), {"email": "nobody@example.com"})
+
+        self.assertRedirects(response, reverse("password_reset_done"))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_password_reset_is_rate_limited(self):
+        for _ in range(5):
+            self.client.post(reverse("password_reset"), {"email": "owner@example.com"})
+
+        response = self.client.post(reverse("password_reset"), {"email": "owner@example.com"})
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(len(mail.outbox), 5)
+
+    @override_settings(DEBUG=False, PUBLIC_BASE_URL="https://kerm.co.ke")
+    def test_production_reset_link_uses_public_base_url(self):
+        self.client.post(reverse("password_reset"), {"email": "owner@example.com"})
+
+        self.assertIn("https://kerm.co.ke/password-reset/", mail.outbox[0].body)
+
+
+@override_settings(PUBLIC_BASE_URL="https://kerm.co.ke")
+class TrialReminderTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.organization = Organization.objects.create(name="Asali Farm", code="ASALI")
+        for username, role in (
+            ("admin", "admin"),
+            ("manager", "risk_manager"),
+            ("viewer", "viewer"),
+        ):
+            OrganizationMembership.objects.create(
+                user=User.objects.create_user(username, f"{username}@example.com", "pw-12345678"),
+                organization=self.organization,
+                role=role,
+            )
+        self.subscription = self.organization.subscription
+
+    def set_trial_age(self, days):
+        OrganizationSubscription.objects.filter(pk=self.subscription.pk).update(
+            created_at=timezone.now() - timedelta(days=days)
+        )
+
+    def run_reminders(self, *args):
+        call_command("send_trial_reminders", *args, stdout=StringIO())
+        self.subscription.refresh_from_db()
+
+    def test_seven_day_reminder_goes_to_billing_managers_once(self):
+        self.set_trial_age(24)
+
+        self.run_reminders()
+        self.run_reminders()
+
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(
+            sorted(message.to[0] for message in mail.outbox),
+            ["admin@example.com", "manager@example.com"],
+        )
+        self.assertEqual(mail.outbox[0].subject, "Your KERMS free trial ends in 6 days")
+        self.assertIn(
+            f"https://kerm.co.ke/billing/?organization={self.organization.pk}",
+            mail.outbox[0].body,
+        )
+        self.assertIn("KES 500", mail.outbox[0].body)
+        self.assertEqual(self.subscription.last_trial_reminder, "7d")
+
+    def test_reminders_progress_through_each_stage(self):
+        self.set_trial_age(24)
+        self.run_reminders()
+        self.set_trial_age(29.5)
+        self.run_reminders()
+        self.set_trial_age(31)
+        self.run_reminders()
+
+        subjects = [message.subject for message in mail.outbox[::2]]
+        self.assertEqual(
+            subjects,
+            [
+                "Your KERMS free trial ends in 6 days",
+                "Your KERMS free trial ends tomorrow",
+                "Your KERMS free trial has ended",
+            ],
+        )
+        self.assertIn("now read-only", mail.outbox[-1].body)
+        self.assertEqual(self.subscription.last_trial_reminder, "expired")
+
+    def test_missed_runs_send_only_the_latest_reminder(self):
+        self.set_trial_age(29.5)
+
+        self.run_reminders()
+
+        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(mail.outbox[0].subject, "Your KERMS free trial ends tomorrow")
+
+    def test_no_reminder_early_in_trial_or_long_after_expiry(self):
+        for age in (10, 40):
+            self.set_trial_age(age)
+            self.run_reminders()
+
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_paid_or_waived_workspaces_get_no_reminder(self):
+        self.subscription.onboarding_fee_waived_at = timezone.now()
+        self.subscription.save()
+        self.set_trial_age(24)
+
+        self.run_reminders()
+
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_dry_run_sends_nothing(self):
+        self.set_trial_age(24)
+
+        self.run_reminders("--dry-run")
+
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(self.subscription.last_trial_reminder, "")

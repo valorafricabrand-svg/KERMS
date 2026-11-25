@@ -20,6 +20,7 @@ class BillingAccessMiddleware:
         "/login/",
         "/logout/",
         "/signup/",
+        "/password-reset/",
         "/verify-email/",
         "/resend-verification/",
         "/terms/",

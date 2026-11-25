@@ -42,3 +42,5 @@
   .auth-assurance { padding: 0 8px; }
   .auth-two-column { grid-template-columns: 1fr; gap: 0; }
 }
+.auth-forgot-link { justify-self: end; margin-top: 4px; color: #19745d; font-size: 12px; font-weight: 700; text-decoration: none; }
+.auth-forgot-link:hover { text-decoration: underline; }
