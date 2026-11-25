@@ -1,6 +1,7 @@
 import re
 from django import forms
 from django.contrib.auth import get_user_model
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from datetime import date
@@ -62,6 +63,18 @@ def _clean_organization_name(name):
     if Organization.objects.filter(name__iexact=name).exists():
         raise forms.ValidationError("This workspace name is already in use.")
     return name
+
+
+class SignInForm(AuthenticationForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["username"].label = "Email or username"
+        self.fields["username"].widget.attrs.update(
+            {"placeholder": "you@business.co.ke", "autocomplete": "username"}
+        )
+        self.fields["password"].widget.attrs.update(
+            {"placeholder": "Your password", "autocomplete": "current-password"}
+        )
 
 
 class SignUpForm(forms.Form):

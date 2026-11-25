@@ -1,6 +1,7 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path
 from . import views
+from .forms import SignInForm
 
 urlpatterns = [
     path("", views.public_home, name="home"),
@@ -8,6 +9,7 @@ urlpatterns = [
         "login/",
         auth_views.LoginView.as_view(
             template_name="registration/login.html",
+            authentication_form=SignInForm,
             redirect_authenticated_user=True,
         ),
         name="login",
