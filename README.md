@@ -129,7 +129,7 @@ timestamp are recorded with the account.
 ### Password reset
 
 The sign-in page links to `/password-reset/`, which emails a single-use link
-(valid for three days) to active accounts with a password. It shows the same
+(valid for 10 minutes) to active accounts with a password. It shows the same
 confirmation whether or not the address exists, and shares the same
 five-per-hour limit. In production, links use `DJANGO_PUBLIC_BASE_URL`.
 Accounts created only through Google have no password and sign in with Google.

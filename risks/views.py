@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth import views as auth_views
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.mail import send_mail
@@ -13,7 +13,7 @@ from django.template.loader import render_to_string
 from django.utils.dateparse import parse_datetime
 from django.utils.crypto import salted_hmac
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.http import base36_to_int, urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.http import Http404, JsonResponse
@@ -1226,7 +1226,22 @@ def _send_verification_email(request, user):
     )
 
 
+class ShortLivedPasswordResetTokenGenerator(PasswordResetTokenGenerator):
+    key_salt = "risks.ShortLivedPasswordResetTokenGenerator"
+    max_age_seconds = 10 * 60
+
+    def check_token(self, user, token):
+        if not super().check_token(user, token):
+            return False
+        issued_at = base36_to_int(token.split("-")[0])
+        return self._num_seconds(self._now()) - issued_at <= self.max_age_seconds
+
+
+password_reset_token_generator = ShortLivedPasswordResetTokenGenerator()
+
+
 class RateLimitedPasswordResetView(auth_views.PasswordResetView):
+    token_generator = password_reset_token_generator
     template_name = "registration/password_reset_form.html"
     email_template_name = "registration/password_reset_email.txt"
     subject_template_name = "registration/password_reset_subject.txt"

@@ -1,7 +1,7 @@
 import hashlib
 import json
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from io import StringIO
 from decimal import Decimal
 from urllib.parse import parse_qs, urlsplit
@@ -2497,6 +2497,19 @@ class PasswordResetTests(TestCase):
 
         self.assertFalse(response.context["validlink"])
         self.assertContains(response, "This link has expired")
+
+    def test_reset_link_expires_after_ten_minutes(self):
+        self.client.post(reverse("password_reset"), {"email": "owner@example.com"})
+        link = self.reset_link_path()
+        generator_now = "risks.views.ShortLivedPasswordResetTokenGenerator._now"
+
+        with patch(generator_now, return_value=datetime.now() + timedelta(minutes=9)):
+            self.assertTrue(self.client.get(link, follow=True).context["validlink"])
+        with patch(generator_now, return_value=datetime.now() + timedelta(minutes=11)):
+            response = self.client.get(link, follow=True)
+
+        self.assertFalse(response.context["validlink"])
+        self.assertContains(response, "expire after 10 minutes")
 
     def test_unknown_email_gets_same_response_and_no_email(self):
         response = self.client.post(reverse("password_reset"), {"email": "nobody@example.com"})
