@@ -551,6 +551,41 @@ class RiskPlatformTests(TestCase):
         self.assertTrue(response.wsgi_request.user.is_authenticated)
         self.assertEqual(mail.outbox, [])
 
+    @override_settings(DEBUG=True, PUBLIC_SIGNUP_ENABLED=True)
+    def test_minimal_signup_generates_username_and_workspace_code(self):
+        Organization.objects.create(name="Existing Kamau", code="KAMAU-HARDWARE")
+        get_user_model().objects.create_user(username="wanjiru", email="other@example.com")
+        signup_page = self.client.get(reverse("signup"))
+        self.assertContains(signup_page, "30 days free")
+        self.assertNotContains(signup_page, "Workspace code")
+        self.assertNotContains(signup_page, "Confirm password")
+
+        response = self.client.post(
+            reverse("signup"),
+            {
+                "full_name": "Wanjiru Kamau",
+                "email": "Wanjiru@Example.com",
+                "organization_name": "Kamau Hardware",
+                "password1": "StrongPass!123",
+                "terms_accepted": "on",
+            },
+        )
+
+        self.assertRedirects(response, reverse("dashboard"))
+        user = get_user_model().objects.get(email="wanjiru@example.com")
+        self.assertEqual(user.username, "wanjiru2")
+        self.assertEqual((user.first_name, user.last_name), ("Wanjiru", "Kamau"))
+        organization = OrganizationMembership.objects.get(user=user).organization
+        self.assertEqual(organization.name, "Kamau Hardware")
+        self.assertEqual(organization.code, "KAMAU-HARDWARE-2")
+
+        self.client.logout()
+        login = self.client.post(
+            reverse("login"),
+            {"username": "wanjiru@example.com", "password": "StrongPass!123"},
+        )
+        self.assertRedirects(login, reverse("dashboard"), fetch_redirect_response=False)
+
     def test_signup_requires_terms_and_a_validated_password(self):
         response = self.client.post(
             reverse("signup"),

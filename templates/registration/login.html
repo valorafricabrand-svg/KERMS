@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=3">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=4">
 </head>
 <body class="auth-page">
   <a class="site-skip-link" href="#sign-in-form">Skip to sign in</a>
@@ -27,12 +27,12 @@
       <h1 id="sign-in-title">Welcome back.</h1>
       <p class="auth-intro">Sign in to continue managing your business profile, assessments, locations, and practical risk actions.</p>
       {% if form.errors %}
-      <div class="auth-error" role="alert">Your username or password was not recognised. Please check your details and try again.</div>
+      <div class="auth-error" role="alert">Your email, username or password was not recognised. Please check your details and try again.</div>
       {% endif %}
       <form method="post" id="sign-in-form">
         {% csrf_token %}
         <input type="hidden" name="next" value="{{ next }}">
-        <label for="{{ form.username.id_for_label }}">Username</label>
+        <label for="{{ form.username.id_for_label }}">Email or username</label>
         {{ form.username }}
         <label for="{{ form.password.id_for_label }}">Password</label>
         {{ form.password }}

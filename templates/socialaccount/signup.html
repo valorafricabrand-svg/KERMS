@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/public-home.css' %}?v=1">
-  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=3">
+  <link rel="stylesheet" href="{% static 'css/auth.css' %}?v=4">
 </head>
 <body class="auth-page">
   <a class="site-skip-link" href="#social-signup-form">Skip to finish setup</a>
@@ -25,7 +25,7 @@
     <section class="auth-card" aria-labelledby="social-signup-title">
       <span class="auth-kicker">One more step</span>
       <h1 id="social-signup-title">Finish setting up your workspace.</h1>
-      <p class="auth-intro">You're signed in with Google. Give your business workspace a name and a short code to finish creating your KERMS account.</p>
+      <p class="auth-intro">You're signed in with Google. Tell us your business name to finish creating your free KERMS account.</p>
       {% if form.non_field_errors %}
       <div class="auth-error" role="alert">{{ form.non_field_errors }}</div>
       {% endif %}
@@ -43,8 +43,6 @@
         {{ form.organization_name }}
         {% if form.organization_name.errors %}<div class="auth-field-error">{{ form.organization_name.errors }}</div>{% endif %}
 
-        <label for="{{ form.organization_code.id_for_label }}">{{ form.organization_code.label }}</label>
-        {{ form.organization_code }}
         {% if form.organization_code.errors %}<div class="auth-field-error">{{ form.organization_code.errors }}</div>{% endif %}
 
         <div class="auth-consent">
@@ -53,7 +51,7 @@
           {% if form.terms_accepted.errors %}<div class="auth-field-error">{{ form.terms_accepted.errors }}</div>{% endif %}
         </div>
 
-        <button class="auth-submit" type="submit">Create workspace <span aria-hidden="true">→</span></button>
+        <button class="auth-submit" type="submit">Create free account <span aria-hidden="true">→</span></button>
       </form>
       <a class="auth-footer-link" href="{% url 'home' %}">← Return to KERMS.CO.KE</a>
     </section>

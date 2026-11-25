@@ -24,6 +24,39 @@ def _clean_organization_code(code):
     return normalized
 
 
+def _generate_organization_code(name):
+    """Builds a unique workspace code from the business name, e.g. "Ada Retail" -> "ADA-RETAIL"."""
+    base = re.sub(r"[^A-Z0-9]+", "-", name.upper()).strip("-")[:14].strip("-") or "WORKSPACE"
+    code = base
+    suffix = 2
+    while Organization.objects.filter(code__iexact=code).exists():
+        code = f"{base}-{suffix}"
+        suffix += 1
+    return code
+
+
+def _generate_username(email):
+    """Builds a unique username from the email address so clients never have to choose one."""
+    User = get_user_model()
+    base = re.sub(r"[^a-z0-9._-]", "", email.split("@")[0].lower())[:30] or "user"
+    if base == "admin":
+        base = "admin-user"
+    username = base
+    suffix = 2
+    while User.objects.filter(username__iexact=username).exists():
+        username = f"{base}{suffix}"
+        suffix += 1
+    return username
+
+
+def _clean_or_generate_organization_code(form):
+    code = form.cleaned_data.get("organization_code", "").strip()
+    if code:
+        return _clean_organization_code(code)
+    name = (form.cleaned_data.get("organization_name") or "").strip()
+    return _generate_organization_code(name) if name else ""
+
+
 def _clean_organization_name(name):
     name = name.strip()
     if Organization.objects.filter(name__iexact=name).exists():
@@ -32,39 +65,36 @@ def _clean_organization_name(name):
 
 
 class SignUpForm(forms.Form):
-    first_name = forms.CharField(
-        max_length=30,
+    full_name = forms.CharField(
+        max_length=61,
         required=False,
-        label="First name",
-        widget=forms.TextInput(attrs={"autocomplete": "given-name"}),
+        label="Your name",
+        widget=forms.TextInput(attrs={"autocomplete": "name", "placeholder": "e.g. Wanjiru Kamau"}),
     )
-    last_name = forms.CharField(
-        max_length=30,
-        required=False,
-        label="Last name",
-        widget=forms.TextInput(attrs={"autocomplete": "family-name"}),
-    )
-    username = forms.CharField(
-        max_length=150,
-        label="Username",
-        widget=forms.TextInput(attrs={"autocomplete": "username"}),
-    )
+    # Optional: older clients and the API may still send these separately.
+    first_name = forms.CharField(max_length=30, required=False)
+    last_name = forms.CharField(max_length=30, required=False)
+    username = forms.CharField(max_length=150, required=False)
     email = forms.EmailField(
-        label="Email address",
-        widget=forms.EmailInput(attrs={"autocomplete": "email"}),
+        label="Work email",
+        widget=forms.EmailInput(attrs={"autocomplete": "email", "placeholder": "you@business.co.ke"}),
     )
     password1 = forms.CharField(
-        widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
+        widget=forms.PasswordInput(attrs={"autocomplete": "new-password", "placeholder": "At least 8 characters"}),
         strip=False,
         label="Password",
     )
     password2 = forms.CharField(
         widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}),
         strip=False,
-        label="Confirm password",
+        required=False,
     )
-    organization_name = forms.CharField(max_length=160, label="Business workspace name")
-    organization_code = forms.CharField(max_length=20, label="Workspace code")
+    organization_name = forms.CharField(
+        max_length=160,
+        label="Business name",
+        widget=forms.TextInput(attrs={"autocomplete": "organization", "placeholder": "e.g. Kamau Hardware Ltd"}),
+    )
+    organization_code = forms.CharField(max_length=20, required=False)
     terms_accepted = forms.BooleanField(required=True)
     website = forms.CharField(
         required=False,
@@ -76,8 +106,6 @@ class SignUpForm(forms.Form):
 
     def clean_username(self):
         username = self.cleaned_data["username"].strip()
-        if not username:
-            raise forms.ValidationError("Choose a username.")
         if username.lower() == "admin":
             raise forms.ValidationError("This username is reserved.")
         return username
@@ -86,10 +114,20 @@ class SignUpForm(forms.Form):
         return self.cleaned_data["email"].strip().lower()
 
     def clean_organization_code(self):
-        return _clean_organization_code(self.cleaned_data["organization_code"])
+        return _clean_or_generate_organization_code(self)
 
     def clean(self):
         cleaned_data = super().clean()
+        full_name = cleaned_data.get("full_name", "").strip()
+        if full_name and not (cleaned_data.get("first_name") or cleaned_data.get("last_name")):
+            first, _, last = full_name.partition(" ")
+            cleaned_data["first_name"] = first[:30]
+            cleaned_data["last_name"] = last.strip()[:30]
+
+        email = cleaned_data.get("email")
+        if not cleaned_data.get("username") and email:
+            cleaned_data["username"] = _generate_username(email)
+
         password1 = cleaned_data.get("password1")
         password2 = cleaned_data.get("password2")
         if password1 and password2 and password1 != password2:
@@ -130,12 +168,12 @@ class ResendVerificationForm(forms.Form):
 class GoogleWorkspaceSignupForm(SocialSignupForm):
     """Collects the workspace details a Google sign-in can't supply."""
 
-    organization_name = forms.CharField(max_length=160, label="Business workspace name")
-    organization_code = forms.CharField(max_length=20, label="Workspace code")
+    organization_name = forms.CharField(max_length=160, label="Business name")
+    organization_code = forms.CharField(max_length=20, required=False)
     terms_accepted = forms.BooleanField(required=True)
 
     def clean_organization_code(self):
-        return _clean_organization_code(self.cleaned_data["organization_code"])
+        return _clean_or_generate_organization_code(self)
 
     def clean_organization_name(self):
         return _clean_organization_name(self.cleaned_data["organization_name"])
