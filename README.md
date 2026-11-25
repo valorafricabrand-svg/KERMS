@@ -78,6 +78,39 @@ EMAIL_USE_TLS=True
 DEFAULT_FROM_EMAIL=accounts@your-domain
 ```
 
+#### File storage
+
+Render's container disk is wiped on every deploy, so generated report files
+must go to an S3-compatible bucket in production. Create a **private** bucket
+(Cloudflare R2's free tier works well) and an access key limited to that
+bucket, then set:
+
+```text
+MEDIA_STORAGE_BUCKET=kerms-media
+MEDIA_STORAGE_ENDPOINT_URL=https://<account-id>.r2.cloudflarestorage.com
+MEDIA_STORAGE_REGION=auto
+MEDIA_STORAGE_ACCESS_KEY_ID=<key id>
+MEDIA_STORAGE_SECRET_ACCESS_KEY=<secret>
+```
+
+Leave `MEDIA_STORAGE_ENDPOINT_URL` empty for AWS S3. Files stay private; the app
+streams downloads to signed-in members. Without `MEDIA_STORAGE_BUCKET`, files
+fall back to the local `media/` folder.
+
+#### Error monitoring and logs
+
+Application logs, including 500-error tracebacks, go to stdout and appear in
+Render's log view. To be alerted to errors, create a Sentry project (Django)
+and set `SENTRY_DSN`. Request bodies and personal data are not sent to Sentry.
+`SENTRY_TRACES_SAMPLE_RATE` (default `0`) enables performance tracing.
+
+#### Continuous integration
+
+`.github/workflows/tests.yml` runs Django checks, a missing-migrations check,
+and both test suites on every push and pull request. In Render's service
+settings, set **Auto-Deploy** to **After CI Checks Pass** so a failing build is
+never deployed.
+
 ## Secure account creation
 
 Outside local development (`DEBUG=False`), self-service registration creates

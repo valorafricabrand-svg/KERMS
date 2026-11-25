@@ -151,8 +151,25 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 STATICFILES_DIRS = [BASE_DIR / "static"]
+MEDIA_STORAGE_BUCKET = os.getenv("MEDIA_STORAGE_BUCKET", "").strip()
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": (
+        {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "bucket_name": MEDIA_STORAGE_BUCKET,
+                "endpoint_url": os.getenv("MEDIA_STORAGE_ENDPOINT_URL") or None,
+                "region_name": os.getenv("MEDIA_STORAGE_REGION") or None,
+                "access_key": os.getenv("MEDIA_STORAGE_ACCESS_KEY_ID", ""),
+                "secret_key": os.getenv("MEDIA_STORAGE_SECRET_ACCESS_KEY", ""),
+                "default_acl": None,
+                "querystring_auth": True,
+                "file_overwrite": False,
+            },
+        }
+        if MEDIA_STORAGE_BUCKET
+        else {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+    ),
     "staticfiles": {
         "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"
     },
@@ -274,3 +291,33 @@ if env_bool("DJANGO_TRUST_PROXY_SSL_HEADER", False):
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "standard"},
+    },
+    "root": {"handlers": ["console"], "level": os.getenv("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}
+
+
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+if SENTRY_DSN:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.getenv("SENTRY_ENVIRONMENT", "development" if DEBUG else "production"),
+        release=os.getenv("RENDER_GIT_COMMIT") or None,
+        traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0")),
+        send_default_pii=False,
+        max_request_body_size="never",
+    )
